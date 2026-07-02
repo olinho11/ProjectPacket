@@ -3,6 +3,7 @@
 import {
   createContext,
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -97,6 +98,7 @@ interface ProjectPacketContextValue {
   deleteSubmission: (submissionId: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   sendReminder: (projectId: string) => Promise<string>;
+  refreshWorkspace: () => Promise<void>;
   addTemplate: (input: {
     name: string;
     description: string;
@@ -227,6 +229,14 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
 
   const currentUser = state.users.find((user) => user.id === sessionUserId) ?? null;
   const isSampleWorkspace = sessionUserId === demoUser.id;
+  const refreshWorkspace = useCallback(async () => {
+    if (!sessionUserId || sessionUserId === demoUser.id) {
+      return;
+    }
+
+    const workspace = await loadWorkspaceFromSupabase(sessionUserId);
+    setState((previous) => mergeRemoteWorkspace(previous, sessionUserId, workspace));
+  }, [sessionUserId]);
 
   const value = useMemo<ProjectPacketContextValue>(
     () => ({
@@ -760,6 +770,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
 
         return message;
       },
+      refreshWorkspace,
       async addTemplate(input) {
         const userId = requireSession(session);
         const template: Template = {
@@ -838,7 +849,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
         }));
       }
     }),
-    [state, session, isReady, isSampleWorkspace, currentUser]
+    [state, session, isReady, isSampleWorkspace, currentUser, refreshWorkspace]
   );
 
   return (

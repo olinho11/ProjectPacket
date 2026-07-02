@@ -25,10 +25,39 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     updateItemStatus,
     deleteSubmission,
     deleteProject,
-    sendReminder
+    sendReminder,
+    refreshWorkspace,
+    isSampleWorkspace
   } = useProjectPacket();
   const [notice, setNotice] = useState("");
   const project = getProject(params.id);
+  const projectId = project?.id ?? params.id;
+  const isProjectLoaded = Boolean(project);
+
+  useEffect(() => {
+    if (!isProjectLoaded || isSampleWorkspace) {
+      return;
+    }
+
+    let cancelled = false;
+    const refresh = () => {
+      if (!cancelled && document.visibilityState === "visible") {
+        void refreshWorkspace();
+      }
+    };
+
+    refresh();
+    const interval = window.setInterval(refresh, 5000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [isProjectLoaded, projectId, isSampleWorkspace, refreshWorkspace]);
 
   if (!project) {
     return (
@@ -48,8 +77,6 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   // Client portals use an unguessable share token, not the project id.
   // Anyone with the link can submit for now; later versions can add optional expiry/passcode controls.
   const uploadPath = `/p/${project.token}`;
-  const projectId = project.id;
-
   function copyLink() {
     const fullUrl = typeof window === "undefined" ? uploadPath : `${window.location.origin}${uploadPath}`;
     navigator.clipboard?.writeText(fullUrl);
@@ -59,6 +86,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   async function saveStatus(itemId: string, status: Parameters<typeof updateItemStatus>[2], note = "") {
     try {
       await updateItemStatus(projectId, itemId, status, note);
+      await refreshWorkspace();
       setNotice("Saved.");
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "Could not save that change.");
@@ -80,6 +108,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
     try {
       await deleteSubmission(submissionId);
+      await refreshWorkspace();
       setNotice("Submission deleted.");
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "Could not delete submission.");
