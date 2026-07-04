@@ -4,6 +4,8 @@ ProjectPacket helps freelancers and small creative agencies collect client proje
 
 It uses Next.js, TypeScript, Tailwind CSS, lucide-react, Supabase Auth, Supabase Postgres, and Supabase Storage.
 
+Live app: https://projectpacket.vercel.app
+
 ## Run
 
 ```bash
@@ -23,5 +25,4 @@ Open the local URL shown by Next.js.
 6. Open or download the uploaded file.
 7. Approve an item.
 8. Request changes on an item.
-9. Restore sample data from settings.
-# ProjectPacket
+9. Refresh the client portal and confirm the client sees approved, changes requested, waived, or still needed feedback.

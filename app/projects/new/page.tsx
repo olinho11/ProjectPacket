@@ -27,12 +27,12 @@ const upgradeTiers = [
 
 export default function NewProjectPage() {
   const router = useRouter();
-  const { state, currentUser, isSampleWorkspace, createProject, getUserProjects } = useProjectPacket();
+  const { state, currentUser, createProject, getUserProjects } = useProjectPacket();
   const templates = state.templates.filter((template) => template.userId === currentUser?.id);
   const subscription = state.subscriptions.find((candidate) => candidate.userId === currentUser?.id);
   const activeProjectCount = getUserProjects().filter((project) => isActiveProjectStatus(project.status)).length;
   const planLimit = getPlanLimit(subscription?.plan);
-  const isAtProjectLimit = !isSampleWorkspace && planLimit !== null && activeProjectCount >= planLimit;
+  const isAtProjectLimit = planLimit !== null && activeProjectCount >= planLimit;
   const firstTemplate = templates[0];
   const [templateId, setTemplateId] = useState(firstTemplate?.id ?? "");
   const selectedTemplate = useMemo(
@@ -102,7 +102,7 @@ export default function NewProjectPage() {
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Could not save this project.";
 
-      if (!isSampleWorkspace && message === PLAN_LIMIT_MESSAGE) {
+      if (message === PLAN_LIMIT_MESSAGE) {
         setShowUpgradeModal(true);
         return;
       }
@@ -151,11 +151,9 @@ export default function NewProjectPage() {
           <p className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
             {SENSITIVE_UPLOAD_WARNING}
           </p>
-          {!isSampleWorkspace ? (
-            <p className="text-xs leading-5 text-ink/50">
-              Plan usage: {activeProjectCount}{planLimit === null ? "" : `/${planLimit}`} active packet{activeProjectCount === 1 ? "" : "s"}.
-            </p>
-          ) : null}
+          <p className="text-xs leading-5 text-ink/50">
+            Plan usage: {activeProjectCount}{planLimit === null ? "" : `/${planLimit}`} active packet{activeProjectCount === 1 ? "" : "s"}.
+          </p>
           {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Saving..." : "Create packet"}
@@ -233,7 +231,7 @@ export default function NewProjectPage() {
           </div>
         </Card>
       </form>
-      {showUpgradeModal && !isSampleWorkspace ? (
+      {showUpgradeModal ? (
         <UpgradeLimitModal onClose={() => setShowUpgradeModal(false)} />
       ) : null}
     </AppShell>

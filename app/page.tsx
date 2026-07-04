@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   ArrowRight,
@@ -15,10 +14,9 @@ import {
   UploadCloud,
   type LucideIcon
 } from "lucide-react";
-import { Button, ButtonLink } from "@/components/ui";
+import { ButtonLink } from "@/components/ui";
 import { SENSITIVE_UPLOAD_WARNING } from "@/src/file-safety";
 import { SUPPORT_EMAIL } from "@/src/legal";
-import { useProjectPacket } from "@/src/store";
 
 const baseRequests = [
   { title: "Logo package", detail: "SVG, PNG, favicon zip", status: "Missing" },
@@ -41,8 +39,6 @@ const pricing = [
 ];
 
 export default function LandingPage() {
-  const router = useRouter();
-  const { openDemo } = useProjectPacket();
   const [copySubmitted, setCopySubmitted] = useState(false);
   const requests = useMemo(
     () =>
@@ -55,11 +51,6 @@ export default function LandingPage() {
   );
   const missing = requests.filter((request) => request.status === "Missing").length;
   const submitted = requests.filter((request) => request.status === "Submitted").length;
-
-  function openProductDemo() {
-    openDemo();
-    router.push("/dashboard");
-  }
 
   return (
     <main className="bg-paper text-ink">
@@ -98,9 +89,9 @@ export default function LandingPage() {
                 Start free
                 <ArrowRight size={16} aria-hidden="true" />
               </ButtonLink>
-              <Button className="min-h-11 px-4 bg-white" variant="secondary" onClick={openProductDemo}>
-                View sample workspace
-              </Button>
+              <ButtonLink href="#pricing" className="min-h-11 px-4 bg-white" variant="secondary">
+                See pricing
+              </ButtonLink>
             </div>
           </div>
 
@@ -179,7 +170,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
+      <section id="pricing" className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
         <div className="grid gap-8 lg:grid-cols-[0.75fr_1.25fr] lg:items-start">
           <div>
             <p className="text-sm font-medium text-ink/50">The switch</p>

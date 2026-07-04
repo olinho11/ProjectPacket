@@ -26,8 +26,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     deleteSubmission,
     deleteProject,
     sendReminder,
-    refreshWorkspace,
-    isSampleWorkspace
+    refreshWorkspace
   } = useProjectPacket();
   const [notice, setNotice] = useState("");
   const project = getProject(params.id);
@@ -35,7 +34,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const isProjectLoaded = Boolean(project);
 
   useEffect(() => {
-    if (!isProjectLoaded || isSampleWorkspace) {
+    if (!isProjectLoaded) {
       return;
     }
 
@@ -57,7 +56,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [isProjectLoaded, projectId, isSampleWorkspace, refreshWorkspace]);
+  }, [isProjectLoaded, projectId, refreshWorkspace]);
 
   if (!project) {
     return (

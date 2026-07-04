@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { CheckCircle2, FileUp, Link2, LockKeyhole, Send } from "lucide-react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { AlertCircle, CheckCircle2, CircleSlash2, Clock3, FileUp, Link2, LockKeyhole, Send } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button, Card, Field, inputClass, textareaClass } from "@/components/ui";
 import { hasValidHex, invalidHexTokens, isColorItem, parseColorSwatches } from "@/src/colors";
@@ -57,43 +57,49 @@ export default function ClientPortalPage({ params }: { params: { token: string }
   const [hasAcceptedCreativeOnly, setHasAcceptedCreativeOnly] = useState(false);
   const project = packet?.project ?? localProject;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadPacket() {
+  const loadPacket = useCallback(async (silent = false) => {
+    if (!silent) {
       setIsLoadingPacket(true);
-      setLoadError("");
+    }
+    setLoadError("");
 
-      try {
-        const response = await fetch(`/api/public/packet/${params.token}`);
+    try {
+      const response = await fetch(`/api/public/packet/${params.token}`, { cache: "no-store" });
 
-        if (!response.ok) {
-          const body = await response.json().catch(() => null);
-          throw new Error(body?.error ?? "Could not load this packet.");
-        }
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error ?? "Could not load this packet.");
+      }
 
-        const body = (await response.json()) as PacketPayload;
-
-        if (!cancelled) {
-          setPacket(body);
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setLoadError(caught instanceof Error ? caught.message : "Could not load this packet.");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingPacket(false);
-        }
+      const body = (await response.json()) as PacketPayload;
+      setPacket(body);
+    } catch (caught) {
+      setLoadError(caught instanceof Error ? caught.message : "Could not load this packet.");
+    } finally {
+      if (!silent) {
+        setIsLoadingPacket(false);
       }
     }
+  }, [params.token]);
 
+  useEffect(() => {
     void loadPacket();
 
-    return () => {
-      cancelled = true;
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void loadPacket(true);
+      }
     };
-  }, [params.token]);
+    const interval = window.setInterval(refresh, 5000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [loadPacket]);
 
   useEffect(() => {
     const accepted = window.localStorage.getItem(confirmationStorageKey(params.token)) === "true";
@@ -176,6 +182,16 @@ export default function ClientPortalPage({ params }: { params: { token: string }
     const draft = drafts[item.id] ?? blankDraft();
     const colorField = item.type === "text" && isColorItem(item.title, item.description);
     const invalidColors = colorField ? invalidHexTokens(draft.textValue) : [];
+
+    if (item.status === "approved" || item.status === "waived") {
+      setItemErrors((previous) => ({
+        ...previous,
+        [item.id]: item.status === "approved"
+          ? "This item is already approved. Ask your freelancer before sending a replacement."
+          : "Your freelancer marked this item as no longer needed."
+      }));
+      return;
+    }
 
     if (!hasAcceptedCreativeOnly) {
       setItemErrors((previous) => ({
@@ -265,6 +281,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
       }
 
       setSavedItem(item.id);
+      await loadPacket(true);
     } catch (caught) {
       setItemErrors((previous) => ({
         ...previous,
@@ -340,6 +357,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
             const colorField = item.type === "text" && isColorItem(item.title, item.description);
             const previewColors = colorField ? parseColorSwatches(draft.textValue || submission?.textValue) : [];
             const error = itemErrors[item.id];
+            const isLockedByReview = item.status === "approved" || item.status === "waived";
 
             return (
               <Card key={item.id} className="p-5">
@@ -351,6 +369,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                       {!item.required ? <span className="text-xs font-semibold text-ink/40">Optional</span> : null}
                     </div>
                     {item.description ? <p className="mt-2 text-sm leading-6 text-ink/60">{item.description}</p> : null}
+                    <ClientReviewNotice item={item} hasSubmission={Boolean(submission)} />
                     {item.changeRequestNote ? (
                       <p className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
                         {item.changeRequestNote}
@@ -391,6 +410,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                           type="file"
                           accept={FILE_ACCEPT_ATTRIBUTE}
                           onChange={(event) => void handleFile(item, event)}
+                          disabled={isLockedByReview}
                           required={!submission && !draft.fileName}
                         />
                       </label>
@@ -402,6 +422,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                           maxLength={TEXT_ANSWER_MAX_LENGTH}
                           value={draft.textValue}
                           onChange={(event) => updateDraft(item.id, { textValue: event.target.value })}
+                          disabled={isLockedByReview}
                           required
                         />
                         <CharacterCounter value={draft.textValue.length} max={TEXT_ANSWER_MAX_LENGTH} />
@@ -419,6 +440,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                             value={draft.linkValue}
                             onChange={(event) => updateDraft(item.id, { linkValue: event.target.value })}
                             placeholder="https://example.com"
+                            disabled={isLockedByReview}
                             required
                           />
                         </div>
@@ -427,7 +449,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                     ) : null}
                     {item.type === "approval" ? (
                       <label className="flex items-start gap-3 rounded-md border border-line bg-white p-3 text-sm font-semibold">
-                        <input type="checkbox" checked={draft.approvedValue} onChange={(event) => updateDraft(item.id, { approvedValue: event.target.checked })} required />
+                        <input type="checkbox" checked={draft.approvedValue} onChange={(event) => updateDraft(item.id, { approvedValue: event.target.checked })} disabled={isLockedByReview} required />
                         I approve this item.
                       </label>
                     ) : null}
@@ -438,6 +460,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                         value={draft.clientComment}
                         onChange={(event) => updateDraft(item.id, { clientComment: event.target.value })}
                         placeholder="Optional note"
+                        disabled={isLockedByReview}
                       />
                       <CharacterCounter value={draft.clientComment.length} max={CLIENT_COMMENT_MAX_LENGTH} />
                     </Field>
@@ -446,9 +469,9 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                         ? `Allowed files: ${allowedUploadSummary()}.`
                         : "You can save each item as soon as it is ready."}
                     </p>
-                    <Button type="submit" disabled={!hasAcceptedCreativeOnly}>
+                    <Button type="submit" disabled={!hasAcceptedCreativeOnly || isLockedByReview}>
                       <Send size={16} aria-hidden="true" />
-                      Save item
+                      {isLockedByReview ? "No action needed" : "Save item"}
                     </Button>
                   </div>
                 </form>
@@ -459,6 +482,67 @@ export default function ClientPortalPage({ params }: { params: { token: string }
       </section>
     </main>
   );
+}
+
+function ClientReviewNotice({ item, hasSubmission }: { item: ChecklistItem; hasSubmission: boolean }) {
+  const notice = clientNoticeForItem(item, hasSubmission);
+
+  return (
+    <div className={`mt-3 rounded-md border px-3 py-2 text-sm leading-6 ${notice.className}`}>
+      <div className="flex items-start gap-2">
+        <notice.Icon className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+        <div>
+          <p className="font-semibold">{notice.title}</p>
+          <p className="text-current/80">{notice.message}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function clientNoticeForItem(item: ChecklistItem, hasSubmission: boolean) {
+  if (item.status === "approved") {
+    return {
+      Icon: CheckCircle2,
+      title: "Approved",
+      message: "Your freelancer approved this item. No more action is needed here.",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800"
+    };
+  }
+
+  if (item.status === "changes_requested") {
+    return {
+      Icon: AlertCircle,
+      title: "Changes requested",
+      message: item.changeRequestNote || "Your freelancer asked for an updated version. Make the change and save this item again.",
+      className: "border-orange-200 bg-orange-50 text-orange-800"
+    };
+  }
+
+  if (item.status === "waived") {
+    return {
+      Icon: CircleSlash2,
+      title: "No longer needed",
+      message: "Your freelancer waived this item. You do not need to upload or approve anything here.",
+      className: "border-line bg-[#fbfaf7] text-ink/65"
+    };
+  }
+
+  if (item.status === "submitted" || hasSubmission) {
+    return {
+      Icon: Clock3,
+      title: "Sent for review",
+      message: "Your latest submission is saved. Your freelancer can approve it or ask for changes.",
+      className: "border-blue-200 bg-blue-50 text-blue-800"
+    };
+  }
+
+  return {
+    Icon: AlertCircle,
+    title: "Still needed",
+    message: "This item is still open. If you already sent something before, your freelancer may need a fresh version.",
+    className: "border-line bg-[#fbfaf7] text-ink/65"
+  };
 }
 
 function CharacterCounter({ value, max }: { value: number; max: number }) {

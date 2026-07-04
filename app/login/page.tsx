@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PlayCircle } from "lucide-react";
 import { Button, Field, inputClass } from "@/components/ui";
 import { useProjectPacket } from "@/src/store";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signIn, openDemo } = useProjectPacket();
+  const { signIn } = useProjectPacket();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -41,12 +40,12 @@ export default function LoginPage() {
             <span className="font-semibold">ProjectPacket</span>
           </Link>
           <div>
-            <p className="text-sm font-medium text-white/50">Sample workspace</p>
+            <p className="text-sm font-medium text-white/50">Client asset collection</p>
             <h1 className="mt-4 max-w-md text-3xl font-semibold leading-tight">
-              Open the sample studio and inspect the client packet workflow.
+              Keep every client file, note, link, and approval in one packet.
             </h1>
             <p className="mt-5 max-w-sm text-sm leading-6 text-white/60">
-              See how a freelancer collects files, reviews submissions, requests changes, and keeps client assets organized.
+              Log in to create packets, review submissions, request changes, and keep project handoffs organized.
             </p>
           </div>
         </section>
@@ -62,7 +61,7 @@ export default function LoginPage() {
             <p className="text-sm font-medium text-ink/50">Sign in</p>
             <h1 className="mt-3 text-2xl font-semibold">Welcome back</h1>
             <p className="mt-2 text-sm leading-6 text-ink/60">
-              Log in with your email and password, or explore a sample workspace first.
+              Log in with your email and password.
             </p>
             <form onSubmit={handleSubmit} className="mt-7 grid gap-4">
               <Field label="Email">
@@ -84,17 +83,6 @@ export default function LoginPage() {
                 {isSubmitting ? "Logging in..." : "Login"}
               </Button>
             </form>
-            <Button
-              className="mt-3 w-full"
-              variant="secondary"
-              onClick={() => {
-                openDemo();
-                router.push("/dashboard");
-              }}
-            >
-              <PlayCircle size={16} aria-hidden="true" />
-              View sample workspace
-            </Button>
             <p className="mt-6 text-sm text-ink/60">
               New here?{" "}
               <Link className="font-semibold text-ink underline decoration-line underline-offset-4 hover:text-teal" href="/signup">

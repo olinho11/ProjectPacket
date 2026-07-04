@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { RefreshCcw, Save } from "lucide-react";
+import { Save } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, Field, inputClass, PageHeader } from "@/components/ui";
 import { SUPPORT_EMAIL } from "@/src/legal";
@@ -12,7 +12,7 @@ import { useProjectPacket } from "@/src/store";
 const colors = ["#2563eb", "#0f766e", "#f59e0b", "#e11d48"];
 
 export default function SettingsPage() {
-  const { currentUser, state, isSampleWorkspace, updateUser, resetDemo, getStats } = useProjectPacket();
+  const { currentUser, state, updateUser, getStats } = useProjectPacket();
   const subscription = state.subscriptions.find((candidate) => candidate.userId === currentUser?.id);
   const stats = getStats();
   const [businessName, setBusinessName] = useState(currentUser?.businessName ?? "");
@@ -91,20 +91,6 @@ export default function SettingsPage() {
               Contact support to upgrade
             </a>
           </Card>
-
-          {isSampleWorkspace ? (
-            <Card className="p-5">
-              <p className="text-sm font-medium text-ink/50">Samples</p>
-              <h2 className="mt-2 text-lg font-semibold">Sample data</h2>
-              <p className="mt-2 text-sm leading-6 text-ink/60">
-                Restore the sample studio, clients, templates, and packets.
-              </p>
-              <Button className="mt-4 w-full" variant="secondary" onClick={resetDemo}>
-                <RefreshCcw size={16} aria-hidden="true" />
-                Restore sample data
-              </Button>
-            </Card>
-          ) : null}
 
           <Card className="p-5">
             <p className="text-sm font-medium text-ink/50">Help</p>

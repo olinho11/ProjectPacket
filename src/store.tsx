@@ -10,7 +10,7 @@ import {
   useState
 } from "react";
 import { type User as SupabaseUser } from "@supabase/supabase-js";
-import { defaultTemplates, demoState, demoUser } from "@/src/demo-data";
+import { defaultTemplates } from "@/src/default-templates";
 import { getBearerAuthHeaders } from "@/src/supabase/browser-auth";
 import { supabase } from "@/src/supabase/client";
 import {
@@ -31,6 +31,16 @@ import {
 
 const STATE_KEY = "projectpacket_state_v2";
 const SESSION_KEY = "projectpacket_session_v2";
+const REMOVED_PREVIEW_USER_ID = "user_maya";
+const emptyState: ProjectPacketState = {
+  users: [],
+  projects: [],
+  checklistItems: [],
+  submissions: [],
+  templates: [],
+  activityLogs: [],
+  subscriptions: []
+};
 
 interface ProjectStats {
   activeProjects: number;
@@ -43,15 +53,12 @@ interface ProjectPacketContextValue {
   state: ProjectPacketState;
   session: Session | null;
   isReady: boolean;
-  isSampleWorkspace: boolean;
   currentUser: ProjectPacketUser | null;
   signUp: (input: { name: string; email: string; password: string; businessName: string }) => Promise<{ needsCodeVerification: boolean }>;
   signIn: (email: string, password: string) => Promise<void>;
   verifyEmailCode: (email: string, code: string) => Promise<void>;
   resendSignupCode: (email: string) => Promise<void>;
-  openDemo: () => void;
   signOut: () => Promise<void>;
-  resetDemo: () => void;
   updateUser: (input: { businessName: string; brandColor: string }) => Promise<void>;
   getProject: (projectId: string) => Project | undefined;
   getProjectByToken: (token: string) => Project | undefined;
@@ -128,7 +135,7 @@ interface ProjectPacketContextValue {
 const ProjectPacketContext = createContext<ProjectPacketContextValue | null>(null);
 
 export function ProjectPacketProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ProjectPacketState>(demoState);
+  const [state, setState] = useState<ProjectPacketState>(emptyState);
   const [session, setSession] = useState<Session | null>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -138,11 +145,15 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
     const storedSession = window.localStorage.getItem(SESSION_KEY);
 
     if (storedState) {
-      setState(JSON.parse(storedState) as ProjectPacketState);
+      setState(removeRemovedPreviewWorkspace(JSON.parse(storedState) as ProjectPacketState));
     }
 
     if (storedSession) {
-      setSession(JSON.parse(storedSession) as Session);
+      const parsedSession = JSON.parse(storedSession) as Session;
+
+      if (parsedSession.userId !== REMOVED_PREVIEW_USER_ID) {
+        setSession(parsedSession);
+      }
     }
 
     setIsReady(true);
@@ -204,7 +215,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
   const sessionUserId = session?.userId ?? null;
 
   useEffect(() => {
-    if (!isReady || !sessionUserId || sessionUserId === demoUser.id) {
+    if (!isReady || !sessionUserId) {
       return;
     }
 
@@ -228,9 +239,8 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
   }, [isReady, sessionUserId]);
 
   const currentUser = state.users.find((user) => user.id === sessionUserId) ?? null;
-  const isSampleWorkspace = sessionUserId === demoUser.id;
   const refreshWorkspace = useCallback(async () => {
-    if (!sessionUserId || sessionUserId === demoUser.id) {
+    if (!sessionUserId) {
       return;
     }
 
@@ -243,7 +253,6 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
       state,
       session,
       isReady,
-      isSampleWorkspace,
       currentUser,
       async signUp(input) {
         const email = input.email.trim().toLowerCase();
@@ -338,18 +347,9 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
           throw new Error(cleanAuthError(error.message));
         }
       },
-      openDemo() {
-        void supabase.auth.signOut();
-        setState(demoState);
-        setSession({ userId: demoUser.id });
-      },
       async signOut() {
         await supabase.auth.signOut();
         setSession(null);
-      },
-      resetDemo() {
-        setState(demoState);
-        setSession({ userId: demoUser.id });
       },
       async updateUser(input) {
         const userId = requireSession(session);
@@ -358,7 +358,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
           ? { ...existingUser, businessName: input.businessName, brandColor: input.brandColor }
           : null;
 
-        if (nextUser && userId !== demoUser.id) {
+        if (nextUser) {
           await syncProfile(nextUser);
         }
 
@@ -446,81 +446,39 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
         return missingCount(projectId, state.checklistItems);
       },
       async createProject(input) {
-        const userId = requireSession(session);
+        requireSession(session);
+        const response = await fetch("/api/projects", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(await getBearerAuthHeaders())
+          },
+          body: JSON.stringify(input)
+        });
 
-        if (userId !== demoUser.id) {
-          const response = await fetch("/api/projects", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(await getBearerAuthHeaders())
-            },
-            body: JSON.stringify(input)
-          });
-
-          if (!response.ok) {
-            const body = await response.json().catch(() => null);
-            throw new Error(body?.error ?? "Could not save this project.");
-          }
-
-          const body = (await response.json()) as {
-            project: Project;
-            items: ChecklistItem[];
-            logs: ActivityLog[];
-            subscription?: Subscription;
-          };
-
-          setState((previous) => ({
-            ...previous,
-            projects: [body.project, ...previous.projects],
-            checklistItems: [...body.items, ...previous.checklistItems],
-            activityLogs: [...body.logs, ...previous.activityLogs],
-            subscriptions: body.subscription
-              ? [body.subscription, ...previous.subscriptions.filter((subscription) => subscription.userId !== body.subscription?.userId)]
-              : previous.subscriptions
-          }));
-
-          return body.project;
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(body?.error ?? "Could not save this project.");
         }
 
-        const projectId = generateUuid();
-        const timestamp = new Date().toISOString();
-        const project: Project = {
-          id: projectId,
-          userId,
-          clientName: input.clientName.trim(),
-          clientEmail: input.clientEmail.trim().toLowerCase(),
-          name: input.name.trim(),
-          dueDate: input.dueDate,
-          status: "sent",
-          token: generateToken(),
-          createdAt: timestamp
+        const body = (await response.json()) as {
+          project: Project;
+          items: ChecklistItem[];
+          logs: ActivityLog[];
+          subscription?: Subscription;
         };
-        const items: ChecklistItem[] = input.items.map((itemInput, index) => ({
-          id: generateUuid(),
-          projectId,
-          title: itemInput.title.trim(),
-          description: itemInput.description.trim(),
-          type: itemInput.type,
-          required: itemInput.required,
-          status: "requested",
-          sortOrder: index + 1,
-          changeRequestNote: "",
-          createdAt: timestamp
-        }));
-        const logs = [
-          createLog(projectId, `Created ${project.name} for ${project.clientName}.`),
-          createLog(projectId, "Client upload link is ready to send.")
-        ];
 
         setState((previous) => ({
           ...previous,
-          projects: [project, ...previous.projects],
-          checklistItems: [...items, ...previous.checklistItems],
-          activityLogs: [...logs, ...previous.activityLogs]
+          projects: [body.project, ...previous.projects],
+          checklistItems: [...body.items, ...previous.checklistItems],
+          activityLogs: [...body.logs, ...previous.activityLogs],
+          subscriptions: body.subscription
+            ? [body.subscription, ...previous.subscriptions.filter((subscription) => subscription.userId !== body.subscription?.userId)]
+            : previous.subscriptions
         }));
 
-        return project;
+        return body.project;
       },
       async submitItemByToken(token, itemId, input) {
         const project = state.projects.find((candidate) => candidate.token === token);
@@ -788,9 +746,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
           }))
         };
 
-        if (userId !== demoUser.id) {
-          await saveTemplateToSupabase(template);
-        }
+        await saveTemplateToSupabase(template);
 
         setState((previous) => ({
           ...previous,
@@ -817,12 +773,10 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
           }))
         };
 
-        if (userId !== demoUser.id) {
-          if (isUuid(templateId)) {
-            await replaceTemplateInSupabase(template);
-          } else {
-            await saveTemplateToSupabase(template);
-          }
+        if (isUuid(templateId)) {
+          await replaceTemplateInSupabase(template);
+        } else {
+          await saveTemplateToSupabase(template);
         }
 
         setState((previous) => ({
@@ -849,7 +803,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
         }));
       }
     }),
-    [state, session, isReady, isSampleWorkspace, currentUser, refreshWorkspace]
+    [state, session, isReady, currentUser, refreshWorkspace]
   );
 
   return (
@@ -1048,6 +1002,25 @@ function withLocalUser(
           },
           ...previous.subscriptions
         ]
+  };
+}
+
+function removeRemovedPreviewWorkspace(state: ProjectPacketState): ProjectPacketState {
+  const removedProjectIds = new Set(
+    state.projects
+      .filter((project) => project.userId === REMOVED_PREVIEW_USER_ID)
+      .map((project) => project.id)
+  );
+
+  return {
+    ...state,
+    users: state.users.filter((user) => user.id !== REMOVED_PREVIEW_USER_ID),
+    projects: state.projects.filter((project) => project.userId !== REMOVED_PREVIEW_USER_ID),
+    checklistItems: state.checklistItems.filter((item) => !removedProjectIds.has(item.projectId)),
+    submissions: state.submissions.filter((submission) => !removedProjectIds.has(submission.projectId)),
+    templates: state.templates.filter((template) => template.userId !== REMOVED_PREVIEW_USER_ID),
+    activityLogs: state.activityLogs.filter((log) => !removedProjectIds.has(log.projectId)),
+    subscriptions: state.subscriptions.filter((subscription) => subscription.userId !== REMOVED_PREVIEW_USER_ID)
   };
 }
 
@@ -1508,12 +1481,4 @@ function generateUuid() {
     const value = character === "x" ? random : (random & 0x3) | 0x8;
     return value.toString(16);
   });
-}
-
-function generateToken() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `packet_${crypto.randomUUID().replaceAll("-", "")}`;
-  }
-
-  return `packet_${Math.random().toString(36).slice(2)}${Date.now()}`;
 }
