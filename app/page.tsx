@@ -32,10 +32,10 @@ const clientActions: Array<{ title: string; value: string; icon: LucideIcon }> =
 ];
 
 const pricing = [
-  ["Free", "$0", "1 active packet"],
-  ["Starter", "$9", "5 active packets"],
-  ["Pro", "$19", "25 active packets"],
-  ["Studio", "$39", "Unlimited packets + branding"]
+  ["Free", "$0", "1 active packet · copy links"],
+  ["Starter", "$9", "5 active packets · client emails"],
+  ["Pro", "$19", "25 active packets · client emails"],
+  ["Studio", "$39", "Unlimited packets · branding · client emails"]
 ];
 
 export default function LandingPage() {
@@ -210,7 +210,7 @@ export default function LandingPage() {
           {[
             ["Create the packet", "Pick a website, brand, social, or video checklist and edit the exact items you need."],
             ["Send one link", "Clients upload files, paste links, add copy, and approve items from a short packet page."],
-            ["Review and chase", "Approve, request changes, waive items, or send a simple reminder from the packet."]
+            ["Review and finish", "Approve, request changes, waive items, send reminders, then mark the packet complete."]
           ].map(([title, text], index) => (
             <div key={title} className={`py-4 lg:px-6 ${index ? "border-t border-white/10 lg:border-l lg:border-t-0" : ""}`}>
               <h3 className="font-semibold">{title}</h3>

@@ -866,8 +866,11 @@ export function calculateProjectStatus(
 ): ProjectStatus {
   const projectItems = items.filter((item) => item.projectId === project.id);
   const requiredItems = projectItems.filter((item) => item.required);
+  const requiredComplete =
+    requiredItems.length > 0 &&
+    requiredItems.every((item) => ["approved", "waived"].includes(item.status));
 
-  if (requiredItems.length > 0 && requiredItems.every((item) => ["approved", "waived"].includes(item.status))) {
+  if (project.status === "completed" && requiredComplete) {
     return "completed";
   }
 

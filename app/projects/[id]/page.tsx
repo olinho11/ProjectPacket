@@ -2,19 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ClipboardCopy, Download, ExternalLink, KeyRound, MailPlus, ShieldCheck, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCopy, Download, ExternalLink, KeyRound, MailPlus, Pencil, RotateCcw, ShieldCheck, Trash2, X, XCircle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Button, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Button, ButtonLink, Card, EmptyState, Field, inputClass, PageHeader, textareaClass } from "@/components/ui";
 import { formatActivityTime } from "@/src/activity";
 import { invalidHexTokens, isColorItem, parseColorSwatches } from "@/src/colors";
 import { SENSITIVE_UPLOAD_WARNING } from "@/src/file-safety";
+import { SUPPORT_EMAIL } from "@/src/legal";
+import { canUseClientEmail, EMAIL_UPGRADE_MESSAGE } from "@/src/plans";
 import { formatDate, useProjectPacket } from "@/src/store";
 import { getBearerAuthHeaders } from "@/src/supabase/browser-auth";
 
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const {
+    state,
+    currentUser,
     getProject,
     getProjectItems,
     getProjectSubmissions,
@@ -25,10 +29,21 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     updateItemStatus,
     deleteSubmission,
     deleteProject,
-    sendReminder,
     refreshWorkspace
   } = useProjectPacket();
   const [notice, setNotice] = useState("");
+  const [showEmailUpgrade, setShowEmailUpgrade] = useState(false);
+  const [changeRequest, setChangeRequest] = useState<{
+    itemId: string;
+    title: string;
+    note: string;
+  } | null>(null);
+  const [editDetails, setEditDetails] = useState<{
+    name: string;
+    clientName: string;
+    clientEmail: string;
+    dueDate: string;
+  } | null>(null);
   const project = getProject(params.id);
   const projectId = project?.id ?? params.id;
   const isProjectLoaded = Boolean(project);
@@ -73,6 +88,13 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
   const submissions = getProjectSubmissions(project.id);
   const logs = getProjectLogs(project.id);
   const progress = getProjectProgress(project.id);
+  const subscription = state.subscriptions.find((candidate) => candidate.userId === currentUser?.id);
+  const emailIncluded = canUseClientEmail(subscription?.plan);
+  const requiredItems = items.filter((item) => item.required);
+  const readyToComplete =
+    requiredItems.length > 0 &&
+    requiredItems.every((item) => ["approved", "waived"].includes(item.status));
+  const isCompleted = project.status === "completed";
   // Client portals use an unguessable share token, not the project id.
   // Anyone with the link can submit for now; later versions can add optional expiry/passcode controls.
   const uploadPath = `/p/${project.token}`;
@@ -92,11 +114,144 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     }
   }
 
+  async function submitChangeRequest() {
+    if (!changeRequest) {
+      return;
+    }
+
+    const note = changeRequest.note.trim();
+
+    if (!note) {
+      setNotice("Add a note before requesting changes.");
+      return;
+    }
+
+    await saveStatus(changeRequest.itemId, "changes_requested", note);
+    setChangeRequest(null);
+  }
+
+  function openChangeRequestModal(itemId: string, title: string, existingNote = "") {
+    setNotice("");
+    setChangeRequest({
+      itemId,
+      title,
+      note: existingNote || "Please update this asset and resubmit it."
+    });
+  }
+
+  function openEditDetailsModal() {
+    if (!project) {
+      return;
+    }
+
+    setNotice("");
+    setEditDetails({
+      name: project.name,
+      clientName: project.clientName,
+      clientEmail: project.clientEmail,
+      dueDate: project.dueDate
+    });
+  }
+
+  async function saveProjectDetails() {
+    if (!editDetails) {
+      return;
+    }
+
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await getBearerAuthHeaders())
+        },
+        body: JSON.stringify(editDetails)
+      });
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Could not update packet details.");
+      }
+
+      await refreshWorkspace();
+      setEditDetails(null);
+      setNotice("Packet details updated.");
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "Could not update packet details.");
+    }
+  }
+
   async function draftReminder() {
     try {
-      setNotice(await sendReminder(projectId));
+      await sendProjectEmail("reminder");
     } catch (caught) {
-      setNotice(caught instanceof Error ? caught.message : "Could not save reminder.");
+      setNotice(caught instanceof Error ? caught.message : "Could not send reminder.");
+    }
+  }
+
+  async function sendProjectEmail(type: "invite" | "reminder" | "completion") {
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await getBearerAuthHeaders())
+        },
+        body: JSON.stringify({ type })
+      });
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        if (body?.error === EMAIL_UPGRADE_MESSAGE) {
+          setShowEmailUpgrade(true);
+          return;
+        }
+
+        throw new Error(body?.error ?? "Could not send email.");
+      }
+
+      await refreshWorkspace();
+      setNotice(body?.message ?? "Email sent.");
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "Could not send email.");
+    }
+  }
+
+  async function saveProjectStatus(status: "completed" | "in_progress") {
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await getBearerAuthHeaders())
+        },
+        body: JSON.stringify({ status })
+      });
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Could not update packet status.");
+      }
+
+      await refreshWorkspace();
+
+      if (status === "completed") {
+        setNotice("Packet marked complete.");
+
+        if (emailIncluded) {
+          await sendProjectEmail("completion");
+        }
+      } else {
+        setNotice("Packet reopened.");
+      }
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "Could not update packet status.");
     }
   }
 
@@ -139,6 +294,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               <ClipboardCopy size={16} aria-hidden="true" />
               Copy link
             </Button>
+            <Button variant="secondary" onClick={openEditDetailsModal}>
+              <Pencil size={16} aria-hidden="true" />
+              Edit
+            </Button>
+            <Button variant="secondary" onClick={() => void sendProjectEmail("invite")}>
+              <MailPlus size={16} aria-hidden="true" />
+              Email invite
+            </Button>
             <Button onClick={() => void draftReminder()}>
               <MailPlus size={16} aria-hidden="true" />
               Reminder
@@ -147,16 +310,23 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
         }
       />
 
-      <div className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="grid gap-5">
-          <Card className="overflow-hidden">
+      <div className="grid min-w-0 gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid min-w-0 gap-5">
+          <Card className="min-w-0 overflow-hidden">
             <div className="grid gap-5 border-b border-line p-5 lg:grid-cols-[1fr_240px] lg:items-center">
               <div>
                 <p className="text-sm text-ink/50">{submissions.length} submissions received</p>
                 <h2 className="mt-3 text-xl font-semibold">Review checklist</h2>
                 <p className="mt-2 text-sm leading-6 text-ink/60">
-                  Approve what is ready, request cleaner resubmits, or waive items you no longer need.
+                  {isCompleted
+                    ? "This packet is complete. Reopen it before changing client submissions."
+                    : "Approve what is ready, request cleaner resubmits, or waive items you no longer need."}
                 </p>
+                {!isCompleted && readyToComplete ? (
+                  <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                    Ready to complete. All required items are approved or waived.
+                  </p>
+                ) : null}
               </div>
               <div>
                 <div className="flex items-center justify-between text-sm">
@@ -172,6 +342,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             <div className="divide-y divide-line">
               {items.map((item) => {
                 const submission = getItemSubmission(item.id);
+                const canApprove = Boolean(submission) && ["submitted", "changes_requested"].includes(item.status);
+                const canRequestChanges =
+                  item.status === "approved" ||
+                  (Boolean(submission) && ["submitted", "changes_requested"].includes(item.status));
+                const reopenStatus = submission ? "submitted" : "requested";
 
                 return (
                   <article key={item.id} className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_260px]">
@@ -203,7 +378,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                         type="button"
                         variant="secondary"
                         className="min-h-9 px-3"
-                        disabled={!["submitted", "changes_requested"].includes(item.status)}
+                        disabled={isCompleted || !canApprove}
                         onClick={() => void saveStatus(item.id, "approved")}
                       >
                         <CheckCircle2 size={15} aria-hidden="true" />
@@ -213,21 +388,35 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                         type="button"
                         variant="secondary"
                         className="min-h-9 px-3"
-                        disabled={!["submitted", "approved"].includes(item.status)}
-                        onClick={() => void saveStatus(item.id, "changes_requested", "Please update this asset and resubmit it.")}
+                        disabled={isCompleted || !canRequestChanges}
+                        onClick={() => openChangeRequestModal(item.id, item.title, item.changeRequestNote)}
                       >
                         <XCircle size={15} aria-hidden="true" />
                         Changes
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="min-h-9 px-3"
-                        onClick={() => void saveStatus(item.id, "waived")}
-                      >
-                        <ShieldCheck size={15} aria-hidden="true" />
-                        Waive
-                      </Button>
+                      {item.status === "waived" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="min-h-9 px-3"
+                          disabled={isCompleted}
+                          onClick={() => void saveStatus(item.id, reopenStatus)}
+                        >
+                          <RotateCcw size={15} aria-hidden="true" />
+                          Reopen
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="min-h-9 px-3"
+                          disabled={isCompleted}
+                          onClick={() => void saveStatus(item.id, "waived")}
+                        >
+                          <ShieldCheck size={15} aria-hidden="true" />
+                          Waive
+                        </Button>
+                      )}
                     </div>
                   </article>
                 );
@@ -236,7 +425,30 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           </Card>
         </div>
 
-        <aside className="grid gap-5 self-start">
+        <aside className="grid min-w-0 gap-5 self-start">
+          <Card className="p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-ink/50">Packet info</p>
+                <h2 className="mt-2 text-lg font-semibold">{project.clientName}</h2>
+              </div>
+              <Button type="button" variant="ghost" className="min-h-9 px-3" onClick={openEditDetailsModal}>
+                <Pencil size={15} aria-hidden="true" />
+                Edit
+              </Button>
+            </div>
+            <dl className="mt-4 grid gap-2 border-t border-line pt-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-ink/50">Email</dt>
+                <dd className="break-all text-right font-semibold text-ink/70">{project.clientEmail}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-ink/50">Due</dt>
+                <dd className="font-semibold text-ink/70">{formatDate(project.dueDate)}</dd>
+              </div>
+            </dl>
+          </Card>
+
           <Card className="p-5">
             <p className="text-sm font-medium text-ink/50">Client link</p>
             <h2 className="mt-2 text-lg font-semibold">Send this once</h2>
@@ -247,6 +459,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               <Button onClick={copyLink}>
                 <ClipboardCopy size={16} aria-hidden="true" />
                 Copy link
+              </Button>
+              <Button variant="secondary" onClick={() => void sendProjectEmail("invite")}>
+                <MailPlus size={16} aria-hidden="true" />
+                Email invite
               </Button>
               <ButtonLink href={uploadPath} variant="secondary">
                 Open client portal
@@ -282,8 +498,36 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           </Card>
 
           <Card className="p-5">
-            <p className="text-sm font-medium text-ink/50">Activity</p>
-            <div className="mt-4">
+            <p className="text-sm font-medium text-ink/50">Completion</p>
+            <h2 className="mt-2 text-lg font-semibold">{isCompleted ? "Packet complete" : readyToComplete ? "Ready to complete" : "Still in progress"}</h2>
+            <p className="mt-2 text-sm leading-6 text-ink/60">
+              {isCompleted
+                ? "Completed packets do not count toward active packet limits."
+                : readyToComplete
+                  ? "Mark this complete when you are done reviewing the required items."
+                  : "Approve or waive every required item before completing this packet."}
+            </p>
+            {isCompleted ? (
+              <Button className="mt-4 w-full" variant="secondary" onClick={() => void saveProjectStatus("in_progress")}>
+                <RotateCcw size={16} aria-hidden="true" />
+                Reopen packet
+              </Button>
+            ) : (
+              <Button className="mt-4 w-full" disabled={!readyToComplete} onClick={() => void saveProjectStatus("completed")}>
+                <CheckCircle2 size={16} aria-hidden="true" />
+                Mark complete
+              </Button>
+            )}
+            <p className="mt-3 text-xs leading-5 text-ink/50">
+              Email sending is {emailIncluded ? "included on your plan" : "a Starter+ perk"}.
+            </p>
+          </Card>
+
+          <Card className="min-w-0 overflow-hidden">
+            <div className="border-b border-line p-5 pb-4">
+              <p className="text-sm font-medium text-ink/50">Activity</p>
+            </div>
+            <div className="max-h-[320px] overflow-y-auto p-5">
               {logs.length ? (
                 logs.map((log, index) => (
                   <div key={log.id} className="relative grid grid-cols-[18px_1fr] gap-3 pb-4 last:pb-0">
@@ -300,9 +544,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             </div>
           </Card>
 
-          <Card className="p-5">
-            <p className="text-sm font-medium text-ink/50">Assets</p>
-            <div className="mt-4 grid gap-3">
+          <Card className="min-w-0 overflow-hidden">
+            <div className="border-b border-line p-5 pb-4">
+              <p className="text-sm font-medium text-ink/50">Assets</p>
+            </div>
+            <div className="grid max-h-[360px] gap-3 overflow-y-auto p-5">
               {submissions.length ? (
                 submissions.map((submission) => (
                   <SubmissionView key={submission.id} submissionId={submission.id} compact onDelete={removeSubmission} />
@@ -331,7 +577,246 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           </Card>
         </aside>
       </div>
+      {changeRequest ? (
+        <ChangeRequestModal
+          note={changeRequest.note}
+          title={changeRequest.title}
+          onChange={(note) => setChangeRequest((previous) => previous ? { ...previous, note } : previous)}
+          onClose={() => setChangeRequest(null)}
+          onSubmit={() => void submitChangeRequest()}
+        />
+      ) : null}
+      {showEmailUpgrade ? (
+        <EmailUpgradeModal onClose={() => setShowEmailUpgrade(false)} />
+      ) : null}
+      {editDetails ? (
+        <EditPacketDetailsModal
+          details={editDetails}
+          onChange={setEditDetails}
+          onClose={() => setEditDetails(null)}
+          onSubmit={() => void saveProjectDetails()}
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+function EditPacketDetailsModal({
+  details,
+  onChange,
+  onClose,
+  onSubmit
+}: {
+  details: {
+    name: string;
+    clientName: string;
+    clientEmail: string;
+    dueDate: string;
+  };
+  onChange: (details: {
+    name: string;
+    clientName: string;
+    clientEmail: string;
+    dueDate: string;
+  }) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6 backdrop-blur-[2px]">
+      <section
+        aria-labelledby="edit-packet-title"
+        aria-modal="true"
+        role="dialog"
+        className="w-full max-w-[520px] overflow-hidden rounded-md border border-line bg-white shadow-[0_24px_70px_rgba(31,36,33,0.22)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div>
+            <p className="text-xs font-medium text-ink/50">Packet info</p>
+            <h2 id="edit-packet-title" className="mt-2 text-xl font-semibold text-ink">
+              Edit packet details
+            </h2>
+          </div>
+          <button
+            aria-label="Close edit packet modal"
+            className="focus-ring inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink/50 hover:bg-black/[0.045] hover:text-ink"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        <form
+          className="grid gap-4 px-5 py-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <Field label="Project name">
+            <input
+              className={inputClass}
+              value={details.name}
+              onChange={(event) => onChange({ ...details, name: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Client name">
+            <input
+              className={inputClass}
+              value={details.clientName}
+              onChange={(event) => onChange({ ...details, clientName: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Client email">
+            <input
+              className={inputClass}
+              type="email"
+              value={details.clientEmail}
+              onChange={(event) => onChange({ ...details, clientEmail: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Due date">
+            <input
+              className={inputClass}
+              type="date"
+              value={details.dueDate}
+              onChange={(event) => onChange({ ...details, dueDate: event.target.value })}
+              required
+            />
+          </Field>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              Save details
+            </Button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function EmailUpgradeModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6 backdrop-blur-[2px]">
+      <section
+        aria-labelledby="email-upgrade-title"
+        aria-modal="true"
+        role="dialog"
+        className="w-full max-w-[460px] overflow-hidden rounded-md border border-line bg-white shadow-[0_24px_70px_rgba(31,36,33,0.22)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div>
+            <p className="text-xs font-medium text-ink/50">Paid email</p>
+            <h2 id="email-upgrade-title" className="mt-2 text-xl font-semibold text-ink">
+              Send client emails on Starter
+            </h2>
+          </div>
+          <button
+            aria-label="Close email upgrade modal"
+            className="focus-ring inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink/50 hover:bg-black/[0.045] hover:text-ink"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="px-5 py-5">
+          <p className="text-sm leading-6 text-ink/65">
+            Free includes copy links. Starter adds client invite emails, reminder emails, and completion emails.
+          </p>
+          <div className="mt-4 overflow-hidden rounded-md border border-line text-sm">
+            {[
+              ["Free", "Copy links"],
+              ["Starter", "5 packets + client emails"],
+              ["Pro", "25 packets + client emails"],
+              ["Studio", "Unlimited packets + branding + client emails"]
+            ].map(([plan, detail], index) => (
+              <div
+                key={plan}
+                className={`grid gap-1 px-3 py-3 sm:grid-cols-[110px_1fr] sm:items-center ${
+                  index > 0 ? "border-t border-line" : ""
+                } ${plan === "Starter" ? "bg-teal/[0.06]" : "bg-white"}`}
+              >
+                <span className="font-semibold text-ink">{plan}</span>
+                <span className="text-ink/60">{detail}</span>
+              </div>
+            ))}
+          </div>
+          <a className="mt-5 inline-flex w-full min-h-10 items-center justify-center rounded-md bg-teal px-3.5 py-2 text-sm font-medium text-white hover:bg-[#0a5f58]" href={`mailto:${SUPPORT_EMAIL}?subject=Upgrade ProjectPacket`}>
+            Contact support to upgrade
+          </a>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ChangeRequestModal({
+  title,
+  note,
+  onChange,
+  onClose,
+  onSubmit
+}: {
+  title: string;
+  note: string;
+  onChange: (note: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6 backdrop-blur-[2px]">
+      <section
+        aria-labelledby="change-request-title"
+        aria-modal="true"
+        role="dialog"
+        className="w-full max-w-[480px] overflow-hidden rounded-md border border-line bg-white shadow-[0_24px_70px_rgba(31,36,33,0.22)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div>
+            <p className="text-xs font-medium text-ink/50">Request changes</p>
+            <h2 id="change-request-title" className="mt-2 text-xl font-semibold text-ink">
+              Send feedback for {title}
+            </h2>
+          </div>
+          <button
+            aria-label="Close request changes modal"
+            className="focus-ring inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink/50 hover:bg-black/[0.045] hover:text-ink"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="grid gap-4 px-5 py-5">
+          <label className="grid gap-2 text-sm font-medium text-ink">
+            Note for the client
+            <textarea
+              className={textareaClass}
+              value={note}
+              onChange={(event) => onChange(event.target.value)}
+              required
+            />
+          </label>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={onSubmit} disabled={!note.trim()}>
+              Request changes
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 

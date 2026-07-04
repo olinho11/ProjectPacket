@@ -49,15 +49,33 @@ export async function POST(request: Request, { params }: { params: { token: stri
       return NextResponse.json({ error: "Upload link not found." }, { status: 404 });
     }
 
+    if (project.status === "completed") {
+      return NextResponse.json({ error: "This packet is complete." }, { status: 409 });
+    }
+
     const { data: item, error: itemError } = await supabase
       .from("checklist_items")
-      .select("id,project_id,title,type")
+      .select("id,project_id,title,type,status")
       .eq("id", body.itemId)
       .eq("project_id", project.id)
       .single();
 
     if (itemError || !item) {
       return NextResponse.json({ error: "Checklist item not found." }, { status: 404 });
+    }
+
+    if (item.status === "approved") {
+      return NextResponse.json(
+        { error: "This item was already approved. No new upload is needed." },
+        { status: 409 }
+      );
+    }
+
+    if (item.status === "waived") {
+      return NextResponse.json(
+        { error: "This item is no longer needed." },
+        { status: 409 }
+      );
     }
 
     let filePath: string | null = null;

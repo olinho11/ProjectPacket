@@ -11,8 +11,11 @@ interface ProjectStatusInput {
 
 export function calculateProjectStatusFromItems(input: ProjectStatusInput): ProjectStatus {
   const requiredItems = input.items.filter((item) => item.required);
+  const requiredComplete =
+    requiredItems.length > 0 &&
+    requiredItems.every((item) => ["approved", "waived"].includes(item.status));
 
-  if (requiredItems.length > 0 && requiredItems.every((item) => ["approved", "waived"].includes(item.status))) {
+  if (input.currentStatus === "completed" && requiredComplete) {
     return "completed";
   }
 

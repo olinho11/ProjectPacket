@@ -179,9 +179,21 @@ export default function ClientPortalPage({ params }: { params: { token: string }
 
   async function handleSubmit(item: ChecklistItem, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!project) {
+      return;
+    }
+
     const draft = drafts[item.id] ?? blankDraft();
     const colorField = item.type === "text" && isColorItem(item.title, item.description);
     const invalidColors = colorField ? invalidHexTokens(draft.textValue) : [];
+
+    if (project.status === "completed") {
+      setItemErrors((previous) => ({
+        ...previous,
+        [item.id]: "This packet is complete. No more submissions are needed."
+      }));
+      return;
+    }
 
     if (item.status === "approved" || item.status === "waived") {
       setItemErrors((previous) => ({
@@ -256,6 +268,11 @@ export default function ClientPortalPage({ params }: { params: { token: string }
 
         if (!response.ok) {
           const body = await response.json().catch(() => null);
+
+          if (response.status === 409) {
+            await loadPacket(true);
+          }
+
           throw new Error(body?.error ?? "Could not save this item.");
         }
 
@@ -315,7 +332,11 @@ export default function ClientPortalPage({ params }: { params: { token: string }
             <div>
               <p className="text-sm font-medium text-ink/50">For {project.clientName}</p>
               <h1 className="mt-3 text-2xl font-semibold sm:text-3xl">{project.name}</h1>
-              <p className="mt-2 text-sm text-ink/60">Due {formatDate(project.dueDate)}. Submit each requested item below.</p>
+              <p className="mt-2 text-sm text-ink/60">
+                {project.status === "completed"
+                  ? "This packet is complete. You can still review what was sent."
+                  : `Due ${formatDate(project.dueDate)}. Submit each requested item below.`}
+              </p>
             </div>
             <div>
               <div className="flex items-center justify-between text-sm">
@@ -328,27 +349,31 @@ export default function ClientPortalPage({ params }: { params: { token: string }
             </div>
           </div>
           <div className="bg-[#fbfaf7] px-5 py-3 text-sm text-ink/60 sm:px-6">
-            Use this page to send the requested files, notes, links, and approvals.
+            {project.status === "completed"
+              ? "This packet is complete. No more submissions are needed."
+              : "Use this page to send the requested files, notes, links, and approvals."}
           </div>
         </Card>
 
-        <Card className="mt-5 p-4 sm:p-5">
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-            <div>
-              <p className="text-sm font-semibold">Creative assets only</p>
-              <p className="mt-1 text-sm leading-6 text-ink/60">{SENSITIVE_UPLOAD_WARNING}</p>
+        {project.status !== "completed" ? (
+          <Card className="mt-5 p-4 sm:p-5">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div>
+                <p className="text-sm font-semibold">Creative assets only</p>
+                <p className="mt-1 text-sm leading-6 text-ink/60">{SENSITIVE_UPLOAD_WARNING}</p>
+              </div>
+              <label className="flex items-start gap-3 rounded-md border border-line bg-[#fbfaf7] p-3 text-sm font-semibold">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={hasAcceptedCreativeOnly}
+                  onChange={(event) => updateCreativeOnlyConfirmation(event.target.checked)}
+                />
+                {CREATIVE_ASSET_CONFIRMATION}
+              </label>
             </div>
-            <label className="flex items-start gap-3 rounded-md border border-line bg-[#fbfaf7] p-3 text-sm font-semibold">
-              <input
-                className="mt-1"
-                type="checkbox"
-                checked={hasAcceptedCreativeOnly}
-                onChange={(event) => updateCreativeOnlyConfirmation(event.target.checked)}
-              />
-              {CREATIVE_ASSET_CONFIRMATION}
-            </label>
-          </div>
-        </Card>
+          </Card>
+        ) : null}
 
         <div className="mt-5 grid gap-4">
           {items.map((item) => {
@@ -357,7 +382,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
             const colorField = item.type === "text" && isColorItem(item.title, item.description);
             const previewColors = colorField ? parseColorSwatches(draft.textValue || submission?.textValue) : [];
             const error = itemErrors[item.id];
-            const isLockedByReview = item.status === "approved" || item.status === "waived";
+            const isLockedByReview = project.status === "completed" || item.status === "approved" || item.status === "waived";
 
             return (
               <Card key={item.id} className="p-5">
@@ -370,7 +395,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                     </div>
                     {item.description ? <p className="mt-2 text-sm leading-6 text-ink/60">{item.description}</p> : null}
                     <ClientReviewNotice item={item} hasSubmission={Boolean(submission)} />
-                    {item.changeRequestNote ? (
+                    {item.changeRequestNote && item.status !== "changes_requested" ? (
                       <p className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
                         {item.changeRequestNote}
                       </p>
@@ -471,7 +496,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                     </p>
                     <Button type="submit" disabled={!hasAcceptedCreativeOnly || isLockedByReview}>
                       <Send size={16} aria-hidden="true" />
-                      {isLockedByReview ? "No action needed" : "Save item"}
+                      {project.status === "completed" ? "Packet complete" : isLockedByReview ? "No action needed" : "Save item"}
                     </Button>
                   </div>
                 </form>

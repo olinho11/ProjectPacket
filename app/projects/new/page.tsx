@@ -19,10 +19,10 @@ interface DraftItem {
 }
 
 const upgradeTiers = [
-  { name: "Free", price: "$0", detail: "1 active packet" },
-  { name: "Starter", price: "$9/mo", detail: "5 active packets", highlighted: true },
-  { name: "Pro", price: "$19/mo", detail: "25 active packets" },
-  { name: "Studio", price: "$39/mo", detail: "Unlimited packets + branding" }
+  { name: "Free", price: "$0", detail: "1 active packet · copy links" },
+  { name: "Starter", price: "$9/mo", detail: "5 active packets + client emails", highlighted: true },
+  { name: "Pro", price: "$19/mo", detail: "25 active packets + client emails" },
+  { name: "Studio", price: "$39/mo", detail: "Unlimited packets + branding + client emails" }
 ];
 
 export default function NewProjectPage() {
@@ -120,7 +120,7 @@ export default function NewProjectPage() {
         title="Create a client packet"
         description="Pick a template, adjust the checklist, then send one upload link."
       />
-      <form onSubmit={handleSubmit} className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <form onSubmit={handleSubmit} className="grid min-w-0 gap-5 p-4 sm:p-6 xl:max-h-[calc(100vh-132px)] xl:grid-cols-[360px_minmax(0,1fr)] xl:overflow-hidden">
         <Card className="grid gap-4 p-5 self-start">
           <div className="border-b border-line pb-4">
             <p className="text-sm font-medium text-ink/50">Packet details</p>
@@ -160,8 +160,8 @@ export default function NewProjectPage() {
           </Button>
         </Card>
 
-        <Card className="p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Card className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+          <div className="flex flex-col gap-3 border-b border-line p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-medium text-ink/50">Client checklist</p>
               <h2 className="mt-2 text-lg font-semibold">Requested items</h2>
@@ -176,7 +176,7 @@ export default function NewProjectPage() {
               Add item
             </Button>
           </div>
-          <div className="mt-5 grid gap-4">
+          <div className="grid min-h-[320px] gap-4 overflow-y-auto p-5 xl:min-h-0">
             {items.map((item, index) => (
               <div key={`${item.title}-${index}`} className="grid gap-3 rounded-md border border-line bg-[#fbfaf7] p-4">
                 <div className="grid gap-3 sm:grid-cols-[1fr_150px_auto]">
@@ -266,7 +266,7 @@ function UpgradeLimitModal({ onClose }: { onClose: () => void }) {
 
         <div className="px-5 py-5">
           <p className="text-sm leading-6 text-ink/65">
-            Free includes 1 active packet. Upgrade to Starter to manage up to 5 active packets.
+            Free includes 1 active packet. Upgrade to Starter to manage up to 5 active packets and send client emails.
           </p>
 
           <div className="mt-4 overflow-hidden rounded-md border border-line text-sm">

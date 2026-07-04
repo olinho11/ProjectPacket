@@ -6,7 +6,7 @@ import { Save } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, Field, inputClass, PageHeader } from "@/components/ui";
 import { SUPPORT_EMAIL } from "@/src/legal";
-import { formatPlanLimit } from "@/src/plans";
+import { canUseClientEmail, formatPlanLimit } from "@/src/plans";
 import { useProjectPacket } from "@/src/store";
 
 const colors = ["#2563eb", "#0f766e", "#f59e0b", "#e11d48"];
@@ -14,6 +14,7 @@ const colors = ["#2563eb", "#0f766e", "#f59e0b", "#e11d48"];
 export default function SettingsPage() {
   const { currentUser, state, updateUser, getStats } = useProjectPacket();
   const subscription = state.subscriptions.find((candidate) => candidate.userId === currentUser?.id);
+  const emailIncluded = canUseClientEmail(subscription?.plan);
   const stats = getStats();
   const [businessName, setBusinessName] = useState(currentUser?.businessName ?? "");
   const [brandColor, setBrandColor] = useState(currentUser?.brandColor ?? "#2563eb");
@@ -86,6 +87,9 @@ export default function SettingsPage() {
             <p className="mt-3 text-3xl font-semibold capitalize">{subscription?.plan ?? "free"}</p>
             <p className="mt-2 text-sm text-ink/60">
               {stats.activeProjects} open packet{stats.activeProjects === 1 ? "" : "s"} · {formatPlanLimit(subscription?.plan)}
+            </p>
+            <p className="mt-2 rounded-md border border-line bg-[#fbfaf7] px-3 py-2 text-sm text-ink/60">
+              Client email sending: <span className="font-semibold text-ink">{emailIncluded ? "Included" : "Starter and above"}</span>
             </p>
             <a className="mt-4 inline-flex text-sm font-semibold text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}?subject=Upgrade ProjectPacket`}>
               Contact support to upgrade

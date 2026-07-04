@@ -32,6 +32,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return NextResponse.json({ error: "Choose a valid item status." }, { status: 400 });
     }
 
+    if (body.status === "changes_requested" && !body.changeRequestNote?.trim()) {
+      return NextResponse.json({ error: "Add a note before requesting changes." }, { status: 400 });
+    }
+
     const { supabase, user } = auth;
     const { data: item, error: itemError } = await supabase
       .from("checklist_items")
@@ -53,7 +57,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return NextResponse.json({ error: "You do not have access to this item." }, { status: 403 });
     }
 
-    const note = body.status === "changes_requested" ? body.changeRequestNote ?? "" : "";
+    const note = body.status === "changes_requested" ? body.changeRequestNote?.trim() ?? "" : "";
     const { data: updatedItem, error: updateError } = await supabase
       .from("checklist_items")
       .update({

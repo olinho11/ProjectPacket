@@ -21,12 +21,10 @@ export default function DashboardPage() {
   const projects = getUserProjects();
   const recentSubmissions = [...state.submissions]
     .filter((submission) => projects.some((project) => project.id === submission.projectId))
-    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
-    .slice(0, 5);
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
   const workQueue = [...projects]
     .filter((project) => project.status !== "completed" || hasReviewItem(project.id, state))
-    .sort((a, b) => queueScore(a, state) - queueScore(b, state))
-    .slice(0, 6);
+    .sort((a, b) => queueScore(a, state) - queueScore(b, state));
 
   return (
     <AppShell>
@@ -36,8 +34,8 @@ export default function DashboardPage() {
         description={`What needs a nudge, a review, or an approval${currentUser?.businessName ? ` for ${currentUser.businessName}` : ""}.`}
         action={<ButtonLink href="/projects/new">New packet</ButtonLink>}
       />
-      <div className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_330px]">
-        <Card className="overflow-hidden border-ink/10">
+      <div className="grid min-w-0 gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_330px]">
+        <Card className="min-w-0 overflow-hidden border-ink/10">
           <div className="flex flex-col gap-3 border-b border-line bg-white p-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-sm font-medium text-ink/50">Queue</p>
@@ -50,7 +48,7 @@ export default function DashboardPage() {
               See every packet
             </Link>
           </div>
-          <div className="divide-y divide-line">
+          <div className="divide-y divide-line xl:max-h-[calc(100vh-310px)] xl:overflow-y-auto">
             {workQueue.length ? (
               workQueue.map((project) => {
                 const row = getQueueLine(project, state);
@@ -97,7 +95,7 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        <div className="grid gap-5 self-start">
+        <div className="grid min-w-0 gap-5 self-start">
           <Card className="p-5">
             <p className="text-sm font-medium text-ink/50">Snapshot</p>
             <h2 className="mt-2 text-lg font-semibold">Right now</h2>
@@ -109,10 +107,12 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          <Card className="p-5">
-            <p className="text-sm font-medium text-ink/50">Inbox</p>
-            <h2 className="mt-2 text-lg font-semibold">Recently sent in</h2>
-            <div className="mt-4 divide-y divide-line">
+          <Card className="min-w-0 overflow-hidden">
+            <div className="border-b border-line p-5 pb-4">
+              <p className="text-sm font-medium text-ink/50">Inbox</p>
+              <h2 className="mt-2 text-lg font-semibold">Recently sent in</h2>
+            </div>
+            <div className="max-h-[360px] divide-y divide-line overflow-y-auto p-5">
               {recentSubmissions.length ? (
                 recentSubmissions.map((submission) => {
                   const project = projects.find((candidate) => candidate.id === submission.projectId);

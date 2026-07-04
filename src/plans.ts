@@ -11,6 +11,8 @@ export const PLAN_LIMITS: Record<Plan, number | null> = {
 
 export const PLAN_LIMIT_MESSAGE =
   "Free includes 1 active packet. Upgrade to Starter to manage up to 5 active packets.";
+export const EMAIL_UPGRADE_MESSAGE =
+  "Client email sending is included on Starter and above. Upgrade to send packet links and reminders by email.";
 
 export function getPlanLimit(plan: Plan | undefined | null) {
   return PLAN_LIMITS[plan ?? "free"];
@@ -18,6 +20,10 @@ export function getPlanLimit(plan: Plan | undefined | null) {
 
 export function isActiveProjectStatus(status: ProjectStatus) {
   return ACTIVE_PROJECT_STATUSES.includes(status);
+}
+
+export function canUseClientEmail(plan: Plan | undefined | null) {
+  return (plan ?? "free") !== "free";
 }
 
 export function formatPlanLimit(plan: Plan | undefined | null) {

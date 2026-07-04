@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { currentUser, signOut } = useProjectPacket();
 
   return (
-    <main className="min-h-screen bg-paper text-ink">
+    <main className="min-h-screen w-full max-w-full overflow-x-clip bg-paper text-ink">
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-line bg-[#fbfaf6] px-3 py-4 md:block">
         <Link href="/dashboard" className="flex items-center gap-3 rounded-md px-2 py-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-md bg-ink text-xs font-bold text-white">
@@ -112,7 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </header>
 
-      <div className="min-w-0 md:pl-60">{children}</div>
+      <div className="min-w-0 max-w-full overflow-x-clip md:pl-60">{children}</div>
     </main>
   );
 }
