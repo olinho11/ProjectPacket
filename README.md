@@ -160,3 +160,6 @@ npm run typecheck  # Check TypeScript types
 ProjectPacket is an MVP. Stripe checkout is not connected yet, so pricing and plan pages currently demonstrate the intended billing structure. Email sending requires valid Resend credentials. Uploads have basic safety checks but no malware scanner. Team accounts, advanced branding, and comment threads are not implemented yet.
 
 ProjectPacket is intentionally not a CRM or full project management system. It focuses on one job: collecting the materials needed before creative work can move forward.
+
+## AI USAGE DECLARATION
+I used Codex to help plan and build ProjectPacket. It made and edited parts of the Next.js and Supabase code and UI, helped debug errors, ran tests, and helped with the design.
