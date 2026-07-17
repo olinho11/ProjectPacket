@@ -27,6 +27,9 @@ export interface Project {
   dueDate: string;
   status: ProjectStatus;
   token: string;
+  accessPasscodeHash?: string;
+  hasPasscode?: boolean;
+  expiresAt?: string | null;
   createdAt: string;
 }
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ClipboardCopy, Download, ExternalLink, KeyRound, MailPlus, Pencil, RotateCcw, ShieldCheck, Trash2, X, XCircle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { AssetIcon } from "@/components/AssetIcon";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button, ButtonLink, Card, EmptyState, Field, inputClass, PageHeader, textareaClass } from "@/components/ui";
 import { formatActivityTime } from "@/src/activity";
@@ -43,6 +44,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     clientName: string;
     clientEmail: string;
     dueDate: string;
+  } | null>(null);
+  const [accessSettings, setAccessSettings] = useState<{
+    accessPasscode: string;
+    clearPasscode: boolean;
+    expiresAt: string;
   } | null>(null);
   const project = getProject(params.id);
   const projectId = project?.id ?? params.id;
@@ -95,8 +101,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     requiredItems.length > 0 &&
     requiredItems.every((item) => ["approved", "waived"].includes(item.status));
   const isCompleted = project.status === "completed";
-  // Client portals use an unguessable share token, not the project id.
-  // Anyone with the link can submit for now; later versions can add optional expiry/passcode controls.
+  // Client portals use an unguessable share token rather than the project id.
   const uploadPath = `/p/${project.token}`;
   function copyLink() {
     const fullUrl = typeof window === "undefined" ? uploadPath : `${window.location.origin}${uploadPath}`;
@@ -153,6 +158,19 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     });
   }
 
+  function openAccessSettingsModal() {
+    if (!project) {
+      return;
+    }
+
+    setNotice("");
+    setAccessSettings({
+      accessPasscode: "",
+      clearPasscode: false,
+      expiresAt: project.expiresAt ? toDateTimeLocal(project.expiresAt) : ""
+    });
+  }
+
   async function saveProjectDetails() {
     if (!editDetails) {
       return;
@@ -180,6 +198,40 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       setNotice("Packet details updated.");
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "Could not update packet details.");
+    }
+  }
+
+  async function saveAccessSettings() {
+    if (!accessSettings) {
+      return;
+    }
+
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await getBearerAuthHeaders())
+        },
+        body: JSON.stringify({
+          accessPasscode: accessSettings.accessPasscode,
+          clearPasscode: accessSettings.clearPasscode,
+          expiresAt: accessSettings.expiresAt ? new Date(accessSettings.expiresAt).toISOString() : null
+        })
+      });
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Could not update client link access.");
+      }
+
+      await refreshWorkspace();
+      setAccessSettings(null);
+      setNotice("Client link access updated.");
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "Could not update client link access.");
     }
   }
 
@@ -313,9 +365,9 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       <div className="grid min-w-0 gap-5 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid min-w-0 gap-5">
           <Card className="min-w-0 overflow-hidden">
-            <div className="grid gap-5 border-b border-line p-5 lg:grid-cols-[1fr_240px] lg:items-center">
+            <div className="grid gap-5 border-b border-line bg-[#fbfaf7] p-5 lg:grid-cols-[1fr_240px] lg:items-center">
               <div>
-                <p className="text-sm text-ink/50">{submissions.length} submissions received</p>
+                <p className="text-sm font-medium text-ink/50">{submissions.length} submissions received</p>
                 <h2 className="mt-3 text-xl font-semibold">Review checklist</h2>
                 <p className="mt-2 text-sm leading-6 text-ink/60">
                   {isCompleted
@@ -323,8 +375,8 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                     : "Approve what is ready, request cleaner resubmits, or waive items you no longer need."}
                 </p>
                 {!isCompleted && readyToComplete ? (
-                  <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
-                    Ready to complete. All required items are approved or waived.
+                  <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-teal">
+                    <CheckCircle2 size={15} /> All required items are approved or waived.
                   </p>
                 ) : null}
               </div>
@@ -349,18 +401,19 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 const reopenStatus = submission ? "submitted" : "requested";
 
                 return (
-                  <article key={item.id} className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_260px]">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
+                  <article key={item.id} className="grid gap-4 px-5 py-4 transition hover:bg-[#fafbf8] lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div className="flex min-w-0 items-start gap-3.5">
+                      <AssetIcon type={item.type} isColor={isColorItem(item.title, item.description)} />
+                      <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                         <h3 className="font-semibold">{item.title}</h3>
                         <StatusBadge status={item.status} />
-                        <span className="text-xs text-ink/40">{item.type}</span>
-                        {!item.required ? <span className="text-xs text-ink/40">Optional</span> : null}
+                        {!item.required ? <span className="text-xs text-ink/38">Optional</span> : null}
                       </div>
                       {item.description ? <p className="mt-2 text-sm leading-6 text-ink/60">{item.description}</p> : null}
                       {item.changeRequestNote ? (
-                        <p className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
-                          {item.changeRequestNote}
+                        <p className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm leading-6 text-orange-800">
+                          Change requested: {item.changeRequestNote}
                         </p>
                       ) : null}
                       <div className="mt-3">
@@ -372,12 +425,13 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                           </p>
                         )}
                       </div>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-start gap-2 lg:justify-end">
                       <Button
                         type="button"
                         variant="secondary"
-                        className="min-h-9 px-3"
+                        className="min-h-9 px-3 text-xs"
                         disabled={isCompleted || !canApprove}
                         onClick={() => void saveStatus(item.id, "approved")}
                       >
@@ -387,7 +441,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       <Button
                         type="button"
                         variant="secondary"
-                        className="min-h-9 px-3"
+                        className="min-h-9 px-3 text-xs"
                         disabled={isCompleted || !canRequestChanges}
                         onClick={() => openChangeRequestModal(item.id, item.title, item.changeRequestNote)}
                       >
@@ -398,7 +452,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                         <Button
                           type="button"
                           variant="ghost"
-                          className="min-h-9 px-3"
+                          className="min-h-9 px-3 text-xs"
                           disabled={isCompleted}
                           onClick={() => void saveStatus(item.id, reopenStatus)}
                         >
@@ -409,7 +463,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                         <Button
                           type="button"
                           variant="ghost"
-                          className="min-h-9 px-3"
+                          className="min-h-9 px-3 text-xs"
                           disabled={isCompleted}
                           onClick={() => void saveStatus(item.id, "waived")}
                         >
@@ -452,7 +506,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           <Card className="p-5">
             <p className="text-sm font-medium text-ink/50">Client link</p>
             <h2 className="mt-2 text-lg font-semibold">Send this once</h2>
-            <p className="mt-3 break-all rounded-md border border-line bg-[#fbfaf7] p-3 text-sm leading-6 text-ink/60">
+            <p className="mt-3 break-all rounded-md border border-line bg-[#fbfaf7] p-3 font-mono text-xs leading-6 text-ink/60">
               {uploadPath}
             </p>
             <div className="mt-4 grid gap-2">
@@ -467,6 +521,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
               <ButtonLink href={uploadPath} variant="secondary">
                 Open client portal
               </ButtonLink>
+              <Button variant="secondary" onClick={openAccessSettingsModal}>
+                <KeyRound size={16} aria-hidden="true" />
+                Access settings
+              </Button>
             </div>
             <div className="mt-4 rounded-md border border-line bg-[#fbfaf7] p-3">
               <div className="flex items-center gap-2 text-sm font-semibold">
@@ -474,10 +532,10 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 Link access
               </div>
               <p className="mt-2 text-xs leading-5 text-ink/60">
-                The URL includes a long private code. Anyone with the URL can submit items for this packet.
+                The URL includes a long private code. Add a passcode or expiration when the packet should be more locked down.
               </p>
               <p className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
-                {SENSITIVE_UPLOAD_WARNING}
+                Creative assets only. {SENSITIVE_UPLOAD_WARNING}
               </p>
               <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-xs">
                 <div className="flex items-center justify-between gap-3">
@@ -486,11 +544,11 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-ink/50">Passcode</dt>
-                  <dd className="font-semibold text-ink/70">Not required</dd>
+                  <dd className="font-semibold text-ink/70">{project.hasPasscode ? "Required" : "Not required"}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-ink/50">Expiration</dt>
-                  <dd className="font-semibold text-ink/70">Not set</dd>
+                  <dd className="text-right font-semibold text-ink/70">{project.expiresAt ? new Date(project.expiresAt).toLocaleString() : "Not set"}</dd>
                 </div>
               </dl>
             </div>
@@ -502,7 +560,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
             <h2 className="mt-2 text-lg font-semibold">{isCompleted ? "Packet complete" : readyToComplete ? "Ready to complete" : "Still in progress"}</h2>
             <p className="mt-2 text-sm leading-6 text-ink/60">
               {isCompleted
-                ? "Completed packets do not count toward active packet limits."
+                ? "Completed packets still use a packet slot until deleted."
                 : readyToComplete
                   ? "Mark this complete when you are done reviewing the required items."
                   : "Approve or waive every required item before completing this packet."}
@@ -525,7 +583,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
           <Card className="min-w-0 overflow-hidden">
             <div className="border-b border-line p-5 pb-4">
-              <p className="text-sm font-medium text-ink/50">Activity</p>
+              <p className="text-sm font-semibold">Activity</p>
             </div>
             <div className="max-h-[320px] overflow-y-auto p-5">
               {logs.length ? (
@@ -546,7 +604,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
 
           <Card className="min-w-0 overflow-hidden">
             <div className="border-b border-line p-5 pb-4">
-              <p className="text-sm font-medium text-ink/50">Assets</p>
+              <p className="text-sm font-semibold">All submissions</p>
             </div>
             <div className="grid max-h-[360px] gap-3 overflow-y-auto p-5">
               {submissions.length ? (
@@ -597,7 +655,121 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           onSubmit={() => void saveProjectDetails()}
         />
       ) : null}
+      {accessSettings ? (
+        <PacketAccessModal
+          settings={accessSettings}
+          hasExistingPasscode={Boolean(project.hasPasscode)}
+          onChange={setAccessSettings}
+          onClose={() => setAccessSettings(null)}
+          onSubmit={() => void saveAccessSettings()}
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+function PacketAccessModal({
+  settings,
+  hasExistingPasscode,
+  onChange,
+  onClose,
+  onSubmit
+}: {
+  settings: {
+    accessPasscode: string;
+    clearPasscode: boolean;
+    expiresAt: string;
+  };
+  hasExistingPasscode: boolean;
+  onChange: (settings: {
+    accessPasscode: string;
+    clearPasscode: boolean;
+    expiresAt: string;
+  }) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6 backdrop-blur-[2px]">
+      <section
+        aria-labelledby="packet-access-title"
+        aria-modal="true"
+        role="dialog"
+        className="w-full max-w-[520px] overflow-hidden rounded-md border border-line bg-white shadow-[0_24px_70px_rgba(31,36,33,0.22)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div>
+            <p className="text-xs font-medium text-ink/50">Client link</p>
+            <h2 id="packet-access-title" className="mt-2 text-xl font-semibold text-ink">
+              Access settings
+            </h2>
+          </div>
+          <button
+            aria-label="Close access settings modal"
+            className="focus-ring inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink/50 hover:bg-black/[0.045] hover:text-ink"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        <form
+          className="grid gap-4 px-5 py-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <Field
+            label={hasExistingPasscode ? "New passcode" : "Passcode"}
+            hint={hasExistingPasscode ? "Leave blank to keep the current passcode." : "Optional. Use 4-32 characters."}
+          >
+            <input
+              className={inputClass}
+              minLength={settings.accessPasscode ? 4 : undefined}
+              maxLength={32}
+              value={settings.accessPasscode}
+              onChange={(event) => onChange({ ...settings, accessPasscode: event.target.value, clearPasscode: false })}
+              placeholder={hasExistingPasscode ? "Keep current passcode" : "Example: client123"}
+            />
+          </Field>
+          {hasExistingPasscode ? (
+            <label className="flex items-start gap-3 rounded-md border border-line bg-[#fbfaf7] p-3 text-sm font-semibold">
+              <input
+                className="mt-1"
+                type="checkbox"
+                checked={settings.clearPasscode}
+                onChange={(event) =>
+                  onChange({
+                    ...settings,
+                    clearPasscode: event.target.checked,
+                    accessPasscode: event.target.checked ? "" : settings.accessPasscode
+                  })
+                }
+              />
+              Remove the current passcode
+            </label>
+          ) : null}
+          <Field label="Expiration" hint="Optional. After this time, clients cannot view or submit this packet.">
+            <input
+              className={inputClass}
+              type="datetime-local"
+              value={settings.expiresAt}
+              onChange={(event) => onChange({ ...settings, expiresAt: event.target.value })}
+            />
+          </Field>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              Save access
+            </Button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 
@@ -749,7 +921,10 @@ function EmailUpgradeModal({ onClose }: { onClose: () => void }) {
               </div>
             ))}
           </div>
-          <a className="mt-5 inline-flex w-full min-h-10 items-center justify-center rounded-md bg-teal px-3.5 py-2 text-sm font-medium text-white hover:bg-[#0a5f58]" href={`mailto:${SUPPORT_EMAIL}?subject=Upgrade ProjectPacket`}>
+          <ButtonLink href="/upgrade" className="mt-5 w-full">
+            Compare plans
+          </ButtonLink>
+          <a className="mt-3 inline-flex w-full justify-center text-sm font-semibold text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}?subject=Upgrade ProjectPacket`}>
             Contact support to upgrade
           </a>
         </div>
@@ -1163,6 +1338,17 @@ function triggerBrowserDownload(url: string, filename: string) {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
+}
+
+function toDateTimeLocal(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
 function ColorSwatches({ colors }: { colors: Array<{ label: string; value: string }> }) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ACTIVE_PROJECT_STATUSES, getPlanLimit, PLAN_LIMIT_MESSAGE } from "@/src/plans";
+import { getPlanLimit, PLAN_LIMIT_MESSAGE } from "@/src/plans";
 import { getAuthenticatedRequestUser } from "@/src/supabase/server-auth";
 import type { ChecklistItemType, Plan } from "@/src/types";
 
@@ -41,8 +41,7 @@ export async function POST(request: Request) {
       const { count, error: countError } = await supabase
         .from("projects")
         .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .in("status", ACTIVE_PROJECT_STATUSES);
+        .eq("user_id", user.id);
 
       if (countError) {
         throw countError;
@@ -70,11 +69,11 @@ export async function POST(request: Request) {
     const { data: project, error: projectError } = await supabase
       .from("projects")
       .insert(projectInsert)
-      .select("id,user_id,client_name,client_email,name,due_date,status,token,created_at")
+      .select("id,user_id,client_name,client_email,name,due_date,status,token,access_passcode_hash,expires_at,created_at")
       .single();
 
     if (projectError || !project) {
-      if (projectError?.message?.includes("active packet")) {
+      if (projectError?.message?.includes("packet slot") || projectError?.message?.includes("active packet")) {
         return NextResponse.json({ error: PLAN_LIMIT_MESSAGE }, { status: 403 });
       }
 
@@ -136,6 +135,8 @@ export async function POST(request: Request) {
         dueDate: project.due_date,
         status: project.status,
         token: project.token,
+        hasPasscode: Boolean(project.access_passcode_hash),
+        expiresAt: project.expires_at,
         createdAt: project.created_at
       },
       items: items.map((item) => ({

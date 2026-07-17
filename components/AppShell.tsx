@@ -1,25 +1,35 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties, ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { FolderKanban, LayoutDashboard, LogOut, Plus, Settings, SquareStack } from "lucide-react";
+import { CreditCard, FolderKanban, LayoutDashboard, LogOut, Plus, Settings, SquareStack } from "lucide-react";
 import { Button, ButtonLink } from "@/components/ui";
+import { brandForeground, normalizeBrandColor } from "@/src/colors";
 import { useProjectPacket } from "@/src/store";
 
 const nav = [
   { href: "/dashboard", label: "Today", icon: LayoutDashboard },
   { href: "/projects", label: "Packets", icon: FolderKanban },
   { href: "/templates", label: "Templates", icon: SquareStack },
+  { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, brandColor }: { children: ReactNode; brandColor?: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { currentUser, signOut } = useProjectPacket();
+  const activeBrandColor = normalizeBrandColor(brandColor ?? currentUser?.brandColor);
 
   return (
-    <main className="min-h-screen w-full max-w-full overflow-x-clip bg-paper text-ink">
+    <main
+      className="min-h-screen w-full max-w-full overflow-x-clip bg-paper text-ink"
+      style={{
+        "--brand-color": activeBrandColor,
+        "--brand-foreground": brandForeground(activeBrandColor)
+      } as CSSProperties}
+    >
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-line bg-[#fbfaf6] px-3 py-4 md:block">
         <Link href="/dashboard" className="flex items-center gap-3 rounded-md px-2 py-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-md bg-ink text-xs font-bold text-white">
@@ -33,7 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <Link
           href="/projects/new"
-          className="focus-ring mt-5 inline-flex min-h-10 w-full items-center justify-start gap-2 rounded-md bg-teal px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#0a5f58]"
+          className="focus-ring mt-5 inline-flex min-h-10 w-full items-center justify-start gap-2 rounded-md bg-[var(--brand-color)] px-3.5 py-2 text-sm font-medium text-[var(--brand-foreground)] transition hover:brightness-95"
         >
           <Plus size={15} aria-hidden="true" />
           New packet
@@ -91,7 +101,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             New
           </ButtonLink>
         </div>
-        <nav className="mt-3 grid grid-cols-4 gap-1">
+        <nav className="mt-3 grid grid-cols-5 gap-1">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

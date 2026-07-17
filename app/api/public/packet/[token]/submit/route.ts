@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateCreativeAssetFile } from "@/src/file-safety";
+import { isPacketExpired, verifyPacketPasscode } from "@/src/passcode";
 import { validateSubmissionLengths } from "@/src/submission-limits";
 import { createSupabaseAdmin } from "@/src/supabase/admin";
 import { recalculateStoredProjectStatus } from "@/src/supabase/project-status";
@@ -15,6 +16,7 @@ interface SubmitBody {
   approvedValue?: boolean;
   clientComment?: string;
   acceptedCreativeAssetOnly?: boolean;
+  passcode?: string;
 }
 
 export async function POST(request: Request, { params }: { params: { token: string } }) {
@@ -41,12 +43,33 @@ export async function POST(request: Request, { params }: { params: { token: stri
     const supabase = createSupabaseAdmin();
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("id,user_id,client_name,token,due_date,status")
+      .select("id,user_id,client_name,token,due_date,status,access_passcode_hash,expires_at")
       .eq("token", params.token)
       .single();
 
+    if (projectError && isMissingAccessColumnError(projectError.message)) {
+      return NextResponse.json(
+        { error: "This packet link needs the latest ProjectPacket database update before passcodes and expiration can work." },
+        { status: 500 }
+      );
+    }
+
     if (projectError || !project) {
       return NextResponse.json({ error: "Upload link not found." }, { status: 404 });
+    }
+
+    if (isPacketExpired(project.expires_at)) {
+      return NextResponse.json(
+        { error: "This packet link has expired. Ask your freelancer for a fresh link." },
+        { status: 410 }
+      );
+    }
+
+    if (!verifyPacketPasscode(body.passcode, project.access_passcode_hash)) {
+      return NextResponse.json(
+        { error: "Enter the packet passcode to continue.", requiresPasscode: true },
+        { status: 401 }
+      );
     }
 
     if (project.status === "completed") {
@@ -258,4 +281,8 @@ function dataUrlToFile(dataUrl: string) {
     buffer: Buffer.from(rawBase64 ?? "", "base64"),
     contentType
   };
+}
+
+function isMissingAccessColumnError(message: string) {
+  return message.includes("access_passcode_hash") || message.includes("expires_at");
 }

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CopyPlus, Plus, Save, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, EmptyState, Field, inputClass, PageHeader, selectClass, textareaClass } from "@/components/ui";
+import { getCustomTemplateLimit, TEMPLATE_LIMIT_MESSAGE } from "@/src/plans";
 import { ChecklistItemType, Template } from "@/src/types";
 import { useProjectPacket } from "@/src/store";
 
@@ -17,6 +18,10 @@ interface DraftTemplateItem {
 export default function TemplatesPage() {
   const { state, currentUser, addTemplate, updateTemplate, deleteTemplate } = useProjectPacket();
   const templates = state.templates.filter((template) => template.userId === currentUser?.id);
+  const subscription = state.subscriptions.find((candidate) => candidate.userId === currentUser?.id);
+  const customTemplateLimit = getCustomTemplateLimit(subscription?.plan);
+  const customTemplateCount = templates.filter((template) => isCustomTemplate(template.id)).length;
+  const isAtTemplateLimit = customTemplateLimit !== null && customTemplateCount >= customTemplateLimit;
   const [selectedId, setSelectedId] = useState(templates[0]?.id ?? "");
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedId) ?? templates[0],
@@ -43,6 +48,11 @@ export default function TemplatesPage() {
   }
 
   function newTemplate() {
+    if (isAtTemplateLimit) {
+      setNotice(TEMPLATE_LIMIT_MESSAGE);
+      return;
+    }
+
     setSelectedId("");
     setDraft({
       name: "New template",
@@ -55,6 +65,12 @@ export default function TemplatesPage() {
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice("");
+
+    if ((!selectedId || !isCustomTemplate(selectedId)) && isAtTemplateLimit) {
+      setNotice(TEMPLATE_LIMIT_MESSAGE);
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -102,17 +118,20 @@ export default function TemplatesPage() {
         title="Reusable asset checklists"
         description="Start projects faster with checklist templates for common creative work."
         action={
-          <Button onClick={newTemplate}>
+          <Button onClick={newTemplate} disabled={isAtTemplateLimit}>
             <Plus size={16} aria-hidden="true" />
             New template
           </Button>
         }
       />
-      <div className="grid min-w-0 gap-5 p-4 sm:p-6 xl:max-h-[calc(100vh-132px)] xl:grid-cols-[320px_minmax(0,1fr)] xl:overflow-hidden">
+      <div className="grid min-w-0 gap-5 p-4 sm:p-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <Card className="min-h-0 overflow-hidden self-start xl:max-h-full">
           <div className="border-b border-line p-5">
             <p className="text-sm font-medium text-ink/50">Library</p>
             <h2 className="mt-2 text-lg font-semibold">Templates</h2>
+            <p className="mt-2 text-xs leading-5 text-ink/50">
+              Custom templates: {customTemplateCount}{customTemplateLimit === null ? "" : `/${customTemplateLimit}`}. Starter and above get unlimited templates.
+            </p>
           </div>
           <div className="max-h-[360px] divide-y divide-line overflow-y-auto xl:max-h-[calc(100vh-250px)]">
             {templates.length ? (
@@ -122,7 +141,7 @@ export default function TemplatesPage() {
                   type="button"
                   onClick={() => chooseTemplate(template)}
                   className={`w-full px-5 py-4 text-left transition hover:bg-paper ${
-                    selectedId === template.id ? "bg-[#fbfaf7]" : "bg-white"
+                    selectedId === template.id ? "border-l-2 border-teal bg-[#f7f8f5] pl-[18px]" : "bg-white"
                   }`}
                 >
                   <p className="font-semibold">{template.name}</p>
@@ -170,9 +189,9 @@ export default function TemplatesPage() {
                 </Button>
               </div>
             </div>
-            <div className="grid min-h-[320px] gap-4 overflow-y-auto p-5 xl:min-h-0">
+            <div className="min-h-[320px] divide-y divide-line overflow-y-auto xl:min-h-0">
               {draft.items.map((item, index) => (
-                <div key={`${item.title}-${index}`} className="grid min-w-0 gap-3 rounded-md border border-line bg-[#fbfaf7] p-4">
+                <div key={`${item.title}-${index}`} className="grid min-w-0 gap-3 p-5 transition hover:bg-[#fafbf8]">
                   <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_150px_auto]">
                     <input
                       className={inputClass}
@@ -259,6 +278,11 @@ export default function TemplatesPage() {
                 ) : null}
               </div>
               {notice ? <p className="text-sm font-medium text-ink/60">{notice}</p> : null}
+              {notice === TEMPLATE_LIMIT_MESSAGE ? (
+                <a className="text-sm font-semibold text-teal hover:underline" href="/upgrade">
+                  Compare plans
+                </a>
+              ) : null}
             </div>
           </form>
         </Card>
@@ -338,4 +362,8 @@ function toDraft(template?: Template): {
         required
       })) ?? [{ title: "New asset", description: "", type: "file", required: true }]
   };
+}
+
+function isCustomTemplate(id: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }

@@ -4,9 +4,9 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { Button, ButtonLink, Card, Field, buttonClass, inputClass, PageHeader, selectClass, textareaClass } from "@/components/ui";
+import { Button, ButtonLink, Card, Field, inputClass, PageHeader, selectClass, textareaClass } from "@/components/ui";
 import { SENSITIVE_UPLOAD_WARNING } from "@/src/file-safety";
-import { getPlanLimit, isActiveProjectStatus, PLAN_LIMIT_MESSAGE } from "@/src/plans";
+import { getPlanLimit, PLAN_LIMIT_MESSAGE } from "@/src/plans";
 import { SUPPORT_EMAIL } from "@/src/legal";
 import { ChecklistItemType } from "@/src/types";
 import { useProjectPacket } from "@/src/store";
@@ -19,10 +19,10 @@ interface DraftItem {
 }
 
 const upgradeTiers = [
-  { name: "Free", price: "$0", detail: "1 active packet · copy links" },
-  { name: "Starter", price: "$9/mo", detail: "5 active packets + client emails", highlighted: true },
-  { name: "Pro", price: "$19/mo", detail: "25 active packets + client emails" },
-  { name: "Studio", price: "$39/mo", detail: "Unlimited packets + branding + client emails" }
+  { name: "Free", price: "$0", detail: "1 packet slot · 2 custom templates" },
+  { name: "Starter", price: "$9/mo", detail: "5 packet slots + client emails", highlighted: true },
+  { name: "Pro", price: "$19/mo", detail: "25 packet slots + client emails" },
+  { name: "Studio", price: "$39/mo", detail: "Unlimited packet slots + branding + client emails" }
 ];
 
 export default function NewProjectPage() {
@@ -30,9 +30,9 @@ export default function NewProjectPage() {
   const { state, currentUser, createProject, getUserProjects } = useProjectPacket();
   const templates = state.templates.filter((template) => template.userId === currentUser?.id);
   const subscription = state.subscriptions.find((candidate) => candidate.userId === currentUser?.id);
-  const activeProjectCount = getUserProjects().filter((project) => isActiveProjectStatus(project.status)).length;
+  const packetSlotCount = getUserProjects().length;
   const planLimit = getPlanLimit(subscription?.plan);
-  const isAtProjectLimit = planLimit !== null && activeProjectCount >= planLimit;
+  const isAtProjectLimit = planLimit !== null && packetSlotCount >= planLimit;
   const firstTemplate = templates[0];
   const [templateId, setTemplateId] = useState(firstTemplate?.id ?? "");
   const selectedTemplate = useMemo(
@@ -120,7 +120,7 @@ export default function NewProjectPage() {
         title="Create a client packet"
         description="Pick a template, adjust the checklist, then send one upload link."
       />
-      <form onSubmit={handleSubmit} className="grid min-w-0 gap-5 p-4 sm:p-6 xl:max-h-[calc(100vh-132px)] xl:grid-cols-[360px_minmax(0,1fr)] xl:overflow-hidden">
+      <form onSubmit={handleSubmit} className="grid min-w-0 gap-5 p-4 sm:p-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card className="grid gap-4 p-5 self-start">
           <div className="border-b border-line pb-4">
             <p className="text-sm font-medium text-ink/50">Packet details</p>
@@ -148,11 +148,11 @@ export default function NewProjectPage() {
               ))}
             </select>
           </Field>
-          <p className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs leading-5 text-orange-800">
-            {SENSITIVE_UPLOAD_WARNING}
+          <p className="border-l-2 border-sun pl-3 text-xs leading-5 text-ink/55">
+            Creative assets only. {SENSITIVE_UPLOAD_WARNING}
           </p>
           <p className="text-xs leading-5 text-ink/50">
-            Plan usage: {activeProjectCount}{planLimit === null ? "" : `/${planLimit}`} active packet{activeProjectCount === 1 ? "" : "s"}.
+            Plan usage: {packetSlotCount}{planLimit === null ? "" : `/${planLimit}`} packet slot{packetSlotCount === 1 ? "" : "s"} used. Delete a packet to free a slot.
           </p>
           {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
           <Button type="submit" disabled={isSubmitting}>
@@ -176,9 +176,16 @@ export default function NewProjectPage() {
               Add item
             </Button>
           </div>
-          <div className="grid min-h-[320px] gap-4 overflow-y-auto p-5 xl:min-h-0">
+          <div className="min-h-[320px] divide-y divide-line overflow-y-auto xl:min-h-0">
+            {!items.length ? (
+              <div className="flex min-h-[320px] flex-col items-center justify-center px-6 text-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-md bg-teal/[0.09] text-teal"><Plus size={19} /></span>
+                <h3 className="mt-4 font-semibold">Add the first request</h3>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-ink/50">Choose a template above or build this packet one item at a time.</p>
+              </div>
+            ) : null}
             {items.map((item, index) => (
-              <div key={`${item.title}-${index}`} className="grid gap-3 rounded-md border border-line bg-[#fbfaf7] p-4">
+              <div key={`${item.title}-${index}`} className="grid gap-3 p-5 transition hover:bg-[#fafbf8]">
                 <div className="grid gap-3 sm:grid-cols-[1fr_150px_auto]">
                   <input
                     className={inputClass}
@@ -266,7 +273,7 @@ function UpgradeLimitModal({ onClose }: { onClose: () => void }) {
 
         <div className="px-5 py-5">
           <p className="text-sm leading-6 text-ink/65">
-            Free includes 1 active packet. Upgrade to Starter to manage up to 5 active packets and send client emails.
+            Free includes 1 packet slot. Delete a packet to free the slot, or upgrade to Starter for 5 slots and client emails.
           </p>
 
           <div className="mt-4 overflow-hidden rounded-md border border-line text-sm">
@@ -292,17 +299,18 @@ function UpgradeLimitModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <p className="mt-3 text-xs leading-5 text-ink/50">
-            Completed packets do not count toward your active packet limit.
+            Completed packets still use a slot until you delete them.
           </p>
 
           <div className="mt-5 grid gap-2 sm:grid-cols-[1fr_auto]">
-            <a className={buttonClass("primary")} href={`mailto:${SUPPORT_EMAIL}?subject=Upgrade ProjectPacket`}>
-              Contact support to upgrade
-            </a>
+            <ButtonLink href="/upgrade">Compare plans</ButtonLink>
             <ButtonLink href="/projects" variant="secondary">
               Back to packets
             </ButtonLink>
           </div>
+          <a className="mt-3 inline-flex text-sm font-semibold text-teal hover:underline" href={`mailto:${SUPPORT_EMAIL}?subject=Upgrade ProjectPacket`}>
+            Contact support to upgrade
+          </a>
         </div>
       </section>
     </div>

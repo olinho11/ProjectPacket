@@ -9,13 +9,26 @@ export const PLAN_LIMITS: Record<Plan, number | null> = {
   agency: null
 };
 
+export const CUSTOM_TEMPLATE_LIMITS: Record<Plan, number | null> = {
+  free: 2,
+  starter: null,
+  pro: null,
+  agency: null
+};
+
 export const PLAN_LIMIT_MESSAGE =
-  "Free includes 1 active packet. Upgrade to Starter to manage up to 5 active packets.";
+  "Free includes 1 packet slot. Delete a packet to free the slot, or upgrade for more.";
+export const TEMPLATE_LIMIT_MESSAGE =
+  "Free includes 2 custom templates. Upgrade for unlimited templates.";
 export const EMAIL_UPGRADE_MESSAGE =
   "Client email sending is included on Starter and above. Upgrade to send packet links and reminders by email.";
 
 export function getPlanLimit(plan: Plan | undefined | null) {
   return PLAN_LIMITS[plan ?? "free"];
+}
+
+export function getCustomTemplateLimit(plan: Plan | undefined | null) {
+  return CUSTOM_TEMPLATE_LIMITS[plan ?? "free"];
 }
 
 export function isActiveProjectStatus(status: ProjectStatus) {
@@ -28,5 +41,10 @@ export function canUseClientEmail(plan: Plan | undefined | null) {
 
 export function formatPlanLimit(plan: Plan | undefined | null) {
   const limit = getPlanLimit(plan);
-  return limit === null ? "Unlimited active packets" : `${limit} active packet${limit === 1 ? "" : "s"}`;
+  return limit === null ? "Unlimited packet slots" : `${limit} packet slot${limit === 1 ? "" : "s"}`;
+}
+
+export function formatCustomTemplateLimit(plan: Plan | undefined | null) {
+  const limit = getCustomTemplateLimit(plan);
+  return limit === null ? "Unlimited custom templates" : `${limit} custom template${limit === 1 ? "" : "s"}`;
 }

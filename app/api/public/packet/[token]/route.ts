@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPacketExpired, verifyPacketPasscode } from "@/src/passcode";
 import { createSupabaseAdmin } from "@/src/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -18,25 +19,62 @@ interface SubmissionRow {
   submitted_at: string;
 }
 
-export async function GET(_request: Request, { params }: { params: { token: string } }) {
+export async function GET(request: Request, { params }: { params: { token: string } }) {
   try {
     const supabase = createSupabaseAdmin();
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("id,user_id,client_name,client_email,name,due_date,status,token,created_at")
+      .select("id,user_id,client_name,client_email,name,due_date,status,token,access_passcode_hash,expires_at,created_at")
       .eq("token", params.token)
       .single();
+
+    if (projectError && isMissingAccessColumnError(projectError.message)) {
+      return NextResponse.json(
+        { error: "This packet link needs the latest ProjectPacket database update before passcodes and expiration can work." },
+        { status: 500 }
+      );
+    }
 
     if (projectError || !project) {
       return NextResponse.json({ error: "Upload link not found." }, { status: 404 });
     }
 
-    const [profileResult, itemsResult] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id,name,email,business_name,brand_color,created_at")
-        .eq("id", project.user_id)
-        .maybeSingle(),
+    const profileResultPromise = supabase
+      .from("profiles")
+      .select("id,name,email,business_name,brand_color,created_at")
+      .eq("id", project.user_id)
+      .maybeSingle();
+    const profileResult = await profileResultPromise;
+
+    if (isPacketExpired(project.expires_at)) {
+      return NextResponse.json(
+        {
+          error: "This packet link has expired. Ask your freelancer for a fresh link.",
+          expired: true,
+          user: profileFromRow(profileResult.data)
+        },
+        { status: 410 }
+      );
+    }
+
+    const passcode = request.headers.get("x-packet-passcode") ?? "";
+
+    if (!verifyPacketPasscode(passcode, project.access_passcode_hash)) {
+      return NextResponse.json(
+        {
+          error: "Enter the packet passcode to continue.",
+          requiresPasscode: true,
+          project: {
+            name: project.name,
+            hasPasscode: true
+          },
+          user: profileFromRow(profileResult.data)
+        },
+        { status: 401 }
+      );
+    }
+
+    const [itemsResult] = await Promise.all([
       supabase
         .from("checklist_items")
         .select("id,project_id,title,description,type,required,status,sort_order,change_request_note,created_at")
@@ -63,18 +101,11 @@ export async function GET(_request: Request, { params }: { params: { token: stri
         dueDate: project.due_date,
         status: project.status,
         token: project.token,
+        hasPasscode: Boolean(project.access_passcode_hash),
+        expiresAt: project.expires_at,
         createdAt: project.created_at
       },
-      user: profileResult.data
-        ? {
-            id: profileResult.data.id,
-            name: profileResult.data.name,
-            email: profileResult.data.email,
-            businessName: profileResult.data.business_name,
-            brandColor: profileResult.data.brand_color,
-            createdAt: profileResult.data.created_at
-          }
-        : null,
+      user: profileFromRow(profileResult.data),
       items: (itemsResult.data ?? []).map((item) => ({
         id: item.id,
         projectId: item.project_id,
@@ -108,6 +139,35 @@ export async function GET(_request: Request, { params }: { params: { token: stri
       { status: 500 }
     );
   }
+}
+
+function isMissingAccessColumnError(message: string) {
+  return message.includes("access_passcode_hash") || message.includes("expires_at");
+}
+
+function profileFromRow(
+  row:
+    | {
+        id: string;
+        name: string;
+        email: string;
+        business_name: string;
+        brand_color: string;
+        created_at: string;
+      }
+    | null
+    | undefined
+) {
+  return row
+    ? {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        businessName: row.business_name,
+        brandColor: row.brand_color,
+        createdAt: row.created_at
+      }
+    : null;
 }
 
 async function loadSubmissions(supabase: ReturnType<typeof createSupabaseAdmin>, projectId: string) {

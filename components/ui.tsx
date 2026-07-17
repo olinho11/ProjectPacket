@@ -7,7 +7,7 @@ export function buttonClass(variant: ButtonVariant = "primary") {
   const base =
     "focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45";
   const variants: Record<ButtonVariant, string> = {
-    primary: "bg-teal text-white shadow-[0_1px_0_rgba(255,255,255,0.14)_inset] hover:bg-[#0a5f58]",
+    primary: "bg-[var(--brand-color)] text-[var(--brand-foreground)] shadow-[0_1px_0_rgba(255,255,255,0.14)_inset] hover:brightness-95",
     secondary: "border border-line bg-white text-ink hover:border-ink/25 hover:bg-[#faf9f5]",
     ghost: "text-ink/60 hover:bg-black/[0.045] hover:text-ink",
     danger: "bg-rose text-white hover:bg-[#b91c40]"

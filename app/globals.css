@@ -4,6 +4,8 @@
 
 :root {
   color-scheme: light;
+  --brand-color: #0f766e;
+  --brand-foreground: #ffffff;
 }
 
 * {

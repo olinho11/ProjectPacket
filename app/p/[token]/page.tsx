@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, CircleSlash2, Clock3, FileUp, Link2, LockKeyhole, Send } from "lucide-react";
+import { AlertCircle, CheckCircle2, CircleSlash2, Clock3, FileUp, Link2, LockKeyhole, Send, ShieldCheck } from "lucide-react";
+import { AssetIcon } from "@/components/AssetIcon";
+import { BrandMark } from "@/components/BrandMark";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button, Card, Field, inputClass, textareaClass } from "@/components/ui";
-import { hasValidHex, invalidHexTokens, isColorItem, parseColorSwatches } from "@/src/colors";
+import { brandForeground, hasValidHex, invalidHexTokens, isColorItem, normalizeBrandColor, parseColorSwatches } from "@/src/colors";
 import {
   allowedUploadSummary,
   CREATIVE_ASSET_CONFIRMATION,
@@ -39,15 +42,7 @@ interface PacketPayload {
 }
 
 export default function ClientPortalPage({ params }: { params: { token: string } }) {
-  const {
-    state,
-    getProjectByToken,
-    getProjectItems,
-    getProjectProgress,
-    getItemSubmission,
-    submitItemByToken
-  } = useProjectPacket();
-  const localProject = getProjectByToken(params.token);
+  const { state } = useProjectPacket();
   const [packet, setPacket] = useState<PacketPayload | null>(null);
   const [isLoadingPacket, setIsLoadingPacket] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -55,24 +50,65 @@ export default function ClientPortalPage({ params }: { params: { token: string }
   const [savedItem, setSavedItem] = useState<string | null>(null);
   const [itemErrors, setItemErrors] = useState<Record<string, string>>({});
   const [hasAcceptedCreativeOnly, setHasAcceptedCreativeOnly] = useState(false);
-  const project = packet?.project ?? localProject;
+  const [requiresPasscode, setRequiresPasscode] = useState(false);
+  const [passcode, setPasscode] = useState("");
+  const [accessPasscode, setAccessPasscode] = useState("");
+  const [passcodeError, setPasscodeError] = useState("");
+  const project = packet?.project ?? null;
 
-  const loadPacket = useCallback(async (silent = false) => {
+  const loadPacket = useCallback(async (silent = false, passcodeOverride?: string) => {
+    const activePasscode = passcodeOverride ?? accessPasscode;
+
     if (!silent) {
       setIsLoadingPacket(true);
     }
     setLoadError("");
+    setPasscodeError("");
 
     try {
-      const response = await fetch(`/api/public/packet/${params.token}`, { cache: "no-store" });
+      const response = await fetch(`/api/public/packet/${params.token}`, {
+        cache: "no-store",
+        headers: activePasscode.trim() ? { "x-packet-passcode": activePasscode.trim() } : undefined
+      });
 
       if (!response.ok) {
         const body = await response.json().catch(() => null);
+
+        if (response.status === 401 && body?.requiresPasscode) {
+          setRequiresPasscode(true);
+          setPacket(null);
+          setPasscodeError(activePasscode.trim() ? "That passcode did not work." : "");
+
+          if (body?.user) {
+            setPacket({
+              project: {
+                id: "",
+                userId: body.user.id,
+                clientName: "",
+                clientEmail: "",
+                name: body?.project?.name ?? "Client packet",
+                dueDate: new Date().toISOString().slice(0, 10),
+                status: "sent",
+                token: params.token,
+                hasPasscode: true,
+                expiresAt: null,
+                createdAt: new Date().toISOString()
+              },
+              user: body.user,
+              items: [],
+              submissions: []
+            });
+          }
+
+          return;
+        }
+
         throw new Error(body?.error ?? "Could not load this packet.");
       }
 
       const body = (await response.json()) as PacketPayload;
       setPacket(body);
+      setRequiresPasscode(false);
     } catch (caught) {
       setLoadError(caught instanceof Error ? caught.message : "Could not load this packet.");
     } finally {
@@ -80,7 +116,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
         setIsLoadingPacket(false);
       }
     }
-  }, [params.token]);
+  }, [params.token, accessPasscode]);
 
   useEffect(() => {
     void loadPacket();
@@ -106,12 +142,59 @@ export default function ClientPortalPage({ params }: { params: { token: string }
     setHasAcceptedCreativeOnly(accepted);
   }, [params.token]);
 
-  if (isLoadingPacket && !project) {
+  if (isLoadingPacket && !project && !requiresPasscode) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-paper p-4">
         <Card className="w-full max-w-lg p-6 text-center">
           <h1 className="text-2xl font-semibold">Loading packet...</h1>
           <p className="mt-2 text-sm leading-6 text-ink/60">Checking this upload link.</p>
+        </Card>
+      </main>
+    );
+  }
+
+  if (requiresPasscode) {
+    const user = packet?.user;
+
+    return (
+      <main
+        className="flex min-h-screen items-center justify-center bg-paper p-4 text-ink"
+        style={{
+          "--brand-color": normalizeBrandColor(user?.brandColor),
+          "--brand-foreground": brandForeground(user?.brandColor)
+        } as CSSProperties}
+      >
+        <Card className="w-full max-w-lg p-6">
+          <div className="flex items-center gap-3">
+            <BrandMark className="h-10 w-10" />
+            <div>
+              <p className="text-sm font-semibold">{user?.businessName ?? "ProjectPacket"}</p>
+              <p className="text-xs text-ink/50">Protected packet link</p>
+            </div>
+          </div>
+          <h1 className="mt-6 text-2xl font-semibold">Enter packet passcode</h1>
+          <p className="mt-2 text-sm leading-6 text-ink/60">
+            This freelancer added a passcode before clients can view or submit assets.
+          </p>
+          <form
+            className="mt-5 grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const nextPasscode = passcode.trim();
+              setAccessPasscode(nextPasscode);
+              void loadPacket(false, nextPasscode);
+            }}
+          >
+            <input
+              className={inputClass}
+              value={passcode}
+              onChange={(event) => setPasscode(event.target.value)}
+              placeholder="Passcode"
+              autoFocus
+            />
+            {passcodeError ? <p className="text-sm font-semibold text-rose">{passcodeError}</p> : null}
+            <Button type="submit">Open packet</Button>
+          </form>
         </Card>
       </main>
     );
@@ -132,14 +215,12 @@ export default function ClientPortalPage({ params }: { params: { token: string }
   }
 
   const user = packet?.user ?? state.users.find((candidate) => candidate.id === project.userId);
-  const items = packet?.items ?? getProjectItems(project.id);
-  const progress = packet ? projectProgress(project.id, items) : getProjectProgress(project.id);
+  const items = packet?.items ?? [];
+  const progress = projectProgress(project.id, items);
   const findSubmission = (itemId: string) =>
-    packet
-      ? packet.submissions
-          .filter((submission) => submission.checklistItemId === itemId)
-          .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0]
-      : getItemSubmission(itemId);
+    (packet?.submissions ?? [])
+      .filter((submission) => submission.checklistItemId === itemId)
+      .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];
 
   function updateDraft(itemId: string, input: Partial<ClientDraft>) {
     setItemErrors((previous) => ({ ...previous, [itemId]: "" }));
@@ -259,43 +340,43 @@ export default function ClientPortalPage({ params }: { params: { token: string }
     };
 
     try {
-      if (packet) {
-        const response = await fetch(`/api/public/packet/${params.token}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemId: item.id, ...payload })
-        });
+      const response = await fetch(`/api/public/packet/${params.token}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item.id, passcode: accessPasscode.trim() || passcode.trim() || undefined, ...payload })
+      });
 
-        if (!response.ok) {
-          const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
 
-          if (response.status === 409) {
-            await loadPacket(true);
-          }
-
-          throw new Error(body?.error ?? "Could not save this item.");
+        if (response.status === 409 || response.status === 410) {
+          await loadPacket(true);
         }
 
-        const body = (await response.json()) as { submission: Submission };
-        setPacket((previous) =>
-          previous
-            ? {
-                ...previous,
-                items: previous.items.map((candidate) =>
-                  candidate.id === item.id
-                    ? { ...candidate, status: "submitted", changeRequestNote: "" }
-                    : candidate
-                ),
-                submissions: [
-                  body.submission,
-                  ...previous.submissions.filter((submission) => submission.checklistItemId !== item.id)
-                ]
-              }
-            : previous
-        );
-      } else {
-          await submitItemByToken(params.token, item.id, payload);
+        if (response.status === 401 && body?.requiresPasscode) {
+          setRequiresPasscode(true);
+        }
+
+        throw new Error(body?.error ?? "Could not save this item.");
       }
+
+      const body = (await response.json()) as { submission: Submission };
+      setPacket((previous) =>
+        previous
+          ? {
+              ...previous,
+              items: previous.items.map((candidate) =>
+                candidate.id === item.id
+                  ? { ...candidate, status: "submitted", changeRequestNote: "" }
+                  : candidate
+              ),
+              submissions: [
+                body.submission,
+                ...previous.submissions.filter((submission) => submission.checklistItemId !== item.id)
+              ]
+            }
+          : previous
+      );
 
       setSavedItem(item.id);
       await loadPacket(true);
@@ -308,13 +389,17 @@ export default function ClientPortalPage({ params }: { params: { token: string }
   }
 
   return (
-    <main className="min-h-screen bg-paper text-ink">
+    <main
+      className="min-h-screen bg-paper text-ink"
+      style={{
+        "--brand-color": normalizeBrandColor(user?.brandColor),
+        "--brand-foreground": brandForeground(user?.brandColor)
+      } as CSSProperties}
+    >
       <header className="border-b border-line bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-ink text-xs font-bold text-white">
-              PP
-            </span>
+            <BrandMark />
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold">{user?.businessName ?? "Your freelancer"}</span>
               <span className="block text-xs text-ink/50">Client asset request</span>
@@ -328,9 +413,9 @@ export default function ClientPortalPage({ params }: { params: { token: string }
 
       <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <Card className="overflow-hidden">
-          <div className="grid gap-5 border-b border-line p-5 sm:p-6 lg:grid-cols-[1fr_240px] lg:items-center">
+          <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[1fr_240px] lg:items-center">
             <div>
-              <p className="text-sm font-medium text-ink/50">For {project.clientName}</p>
+              <p className="text-sm font-medium text-ink/50">Prepared for {project.clientName}</p>
               <h1 className="mt-3 text-2xl font-semibold sm:text-3xl">{project.name}</h1>
               <p className="mt-2 text-sm text-ink/60">
                 {project.status === "completed"
@@ -344,11 +429,11 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                 <span className="font-semibold">{progress}%</span>
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-line">
-                <div className="h-full rounded-full bg-ink" style={{ width: `${progress}%` }} />
+                <div className="h-full rounded-full bg-[var(--brand-color)]" style={{ width: `${progress}%` }} />
               </div>
             </div>
           </div>
-          <div className="bg-[#fbfaf7] px-5 py-3 text-sm text-ink/60 sm:px-6">
+          <div className="border-t border-line bg-[#fbfaf7] px-5 py-3 text-sm text-ink/55 sm:px-7">
             {project.status === "completed"
               ? "This packet is complete. No more submissions are needed."
               : "Use this page to send the requested files, notes, links, and approvals."}
@@ -357,10 +442,12 @@ export default function ClientPortalPage({ params }: { params: { token: string }
 
         {project.status !== "completed" ? (
           <Card className="mt-5 p-4 sm:p-5">
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-              <div>
-                <p className="text-sm font-semibold">Creative assets only</p>
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sun/[0.13] text-[#9a5f00]"><ShieldCheck size={17} /></span>
+                <div><p className="text-sm font-semibold">Creative assets only</p>
                 <p className="mt-1 text-sm leading-6 text-ink/60">{SENSITIVE_UPLOAD_WARNING}</p>
+                </div>
               </div>
               <label className="flex items-start gap-3 rounded-md border border-line bg-[#fbfaf7] p-3 text-sm font-semibold">
                 <input
@@ -385,10 +472,12 @@ export default function ClientPortalPage({ params }: { params: { token: string }
             const isLockedByReview = project.status === "completed" || item.status === "approved" || item.status === "waived";
 
             return (
-              <Card key={item.id} className="p-5">
-                <form onSubmit={(event) => handleSubmit(item, event)} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+              <Card key={item.id} className="overflow-hidden">
+                <form onSubmit={(event) => handleSubmit(item, event)} className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_340px]">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-start gap-3.5">
+                      <AssetIcon type={item.type} isColor={colorField} />
+                      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                       <h2 className="font-semibold">{item.title}</h2>
                       <StatusBadge status={item.status} />
                       {!item.required ? <span className="text-xs font-semibold text-ink/40">Optional</span> : null}
@@ -396,8 +485,8 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                     {item.description ? <p className="mt-2 text-sm leading-6 text-ink/60">{item.description}</p> : null}
                     <ClientReviewNotice item={item} hasSubmission={Boolean(submission)} />
                     {item.changeRequestNote && item.status !== "changes_requested" ? (
-                      <p className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
-                        {item.changeRequestNote}
+                      <p className="mt-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm leading-6 text-orange-800">
+                        Note: {item.changeRequestNote}
                       </p>
                     ) : null}
                     {submission ? (
@@ -418,16 +507,18 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                       </div>
                     ) : null}
                     {savedItem === item.id ? (
-                      <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-emerald-700">
+                      <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-teal">
                         <CheckCircle2 size={16} aria-hidden="true" />
                         Saved.
                       </p>
                     ) : null}
+                    </div>
+                    </div>
                   </div>
 
                   <div className="grid gap-3 rounded-md border border-line bg-[#fbfaf7] p-4">
                     {item.type === "file" ? (
-                      <label className="focus-ring flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal">
+                      <label className="focus-ring flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-ink/25 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:border-ink/45 hover:bg-[#fbfbf9]">
                         <FileUp size={16} aria-hidden="true" />
                         {draft.fileName || "Choose file"}
                         <input
@@ -453,7 +544,7 @@ export default function ClientPortalPage({ params }: { params: { token: string }
                         <CharacterCounter value={draft.textValue.length} max={TEXT_ANSWER_MAX_LENGTH} />
                       </Field>
                     ) : null}
-                    {error ? <p className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">{error}</p> : null}
+                    {error ? <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-6 text-rose">{error}</p> : null}
                     {item.type === "link" ? (
                       <Field label="Link">
                         <div className="relative">
@@ -513,7 +604,7 @@ function ClientReviewNotice({ item, hasSubmission }: { item: ChecklistItem; hasS
   const notice = clientNoticeForItem(item, hasSubmission);
 
   return (
-    <div className={`mt-3 rounded-md border px-3 py-2 text-sm leading-6 ${notice.className}`}>
+    <div className={`mt-4 border-l-2 pl-3 text-sm leading-6 ${notice.className}`}>
       <div className="flex items-start gap-2">
         <notice.Icon className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
         <div>
@@ -531,7 +622,7 @@ function clientNoticeForItem(item: ChecklistItem, hasSubmission: boolean) {
       Icon: CheckCircle2,
       title: "Approved",
       message: "Your freelancer approved this item. No more action is needed here.",
-      className: "border-emerald-200 bg-emerald-50 text-emerald-800"
+      className: "border-teal text-ink/65"
     };
   }
 
@@ -540,7 +631,7 @@ function clientNoticeForItem(item: ChecklistItem, hasSubmission: boolean) {
       Icon: AlertCircle,
       title: "Changes requested",
       message: item.changeRequestNote || "Your freelancer asked for an updated version. Make the change and save this item again.",
-      className: "border-orange-200 bg-orange-50 text-orange-800"
+      className: "border-clay text-ink/70"
     };
   }
 
@@ -549,7 +640,7 @@ function clientNoticeForItem(item: ChecklistItem, hasSubmission: boolean) {
       Icon: CircleSlash2,
       title: "No longer needed",
       message: "Your freelancer waived this item. You do not need to upload or approve anything here.",
-      className: "border-line bg-[#fbfaf7] text-ink/65"
+      className: "border-ink/20 text-ink/60"
     };
   }
 
@@ -558,7 +649,7 @@ function clientNoticeForItem(item: ChecklistItem, hasSubmission: boolean) {
       Icon: Clock3,
       title: "Sent for review",
       message: "Your latest submission is saved. Your freelancer can approve it or ask for changes.",
-      className: "border-blue-200 bg-blue-50 text-blue-800"
+      className: "border-blue text-ink/65"
     };
   }
 
@@ -566,7 +657,7 @@ function clientNoticeForItem(item: ChecklistItem, hasSubmission: boolean) {
     Icon: AlertCircle,
     title: "Still needed",
     message: "This item is still open. If you already sent something before, your freelancer may need a fresh version.",
-    className: "border-line bg-[#fbfaf7] text-ink/65"
+    className: "border-ink/20 text-ink/60"
   };
 }
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hashPacketPasscode } from "@/src/passcode";
 import { getAuthenticatedRequestUser } from "@/src/supabase/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,9 @@ interface PatchProjectBody {
   clientName?: string;
   clientEmail?: string;
   dueDate?: string;
+  accessPasscode?: string;
+  clearPasscode?: boolean;
+  expiresAt?: string | null;
 }
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
@@ -24,9 +28,16 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { supabase, user } = auth;
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("id,user_id,client_name,client_email,name,due_date,status,token,created_at")
+      .select("id,user_id,client_name,client_email,name,due_date,status,token,access_passcode_hash,expires_at,created_at")
       .eq("id", params.id)
       .single();
+
+    if (projectError && isMissingAccessColumnError(projectError.message)) {
+      return NextResponse.json(
+        { error: "Packet access needs the latest Supabase SQL. Run supabase-plan-limits.sql, then try again." },
+        { status: 500 }
+      );
+    }
 
     if (projectError || !project) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
@@ -106,6 +117,76 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       });
     }
 
+    if (
+      Object.prototype.hasOwnProperty.call(body, "accessPasscode") ||
+      Object.prototype.hasOwnProperty.call(body, "clearPasscode") ||
+      Object.prototype.hasOwnProperty.call(body, "expiresAt")
+    ) {
+      const update: Record<string, string | null> = {};
+
+      if (body.clearPasscode) {
+        update.access_passcode_hash = null;
+      } else if (typeof body.accessPasscode === "string" && body.accessPasscode.trim()) {
+        if (body.accessPasscode.trim().length < 4 || body.accessPasscode.trim().length > 32) {
+          return NextResponse.json(
+            { error: "Use a passcode between 4 and 32 characters." },
+            { status: 400 }
+          );
+        }
+
+        update.access_passcode_hash = hashPacketPasscode(body.accessPasscode);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(body, "expiresAt")) {
+        update.expires_at = body.expiresAt || null;
+      }
+
+      const timestamp = new Date().toISOString();
+      const { data: updatedProject, error: updateError } = await supabase
+        .from("projects")
+        .update(update)
+        .eq("id", project.id)
+        .select("id,user_id,client_name,client_email,name,due_date,status,token,access_passcode_hash,expires_at,created_at")
+        .single();
+
+    if (updateError || !updatedProject) {
+        if (updateError && isMissingAccessColumnError(updateError.message)) {
+          return NextResponse.json(
+            { error: "Packet access needs the latest Supabase SQL. Run supabase-plan-limits.sql, then try again." },
+            { status: 500 }
+          );
+        }
+
+        throw updateError ?? new Error("Could not update packet access.");
+      }
+
+      const { data: log, error: logError } = await supabase
+        .from("activity_logs")
+        .insert({
+          project_id: project.id,
+          message: "Updated client link access.",
+          created_at: timestamp
+        })
+        .select("id,project_id,message,created_at")
+        .single();
+
+      if (logError) {
+        console.warn("Packet access saved, but activity log did not save:", logError.message);
+      }
+
+      return NextResponse.json({
+        project: projectFromRow(updatedProject),
+        log: log
+          ? {
+              id: log.id,
+              projectId: log.project_id,
+              message: log.message,
+              createdAt: log.created_at
+            }
+          : null
+      });
+    }
+
     const validationError = validateProjectDetailsBody(body);
 
     if (validationError) {
@@ -122,7 +203,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         due_date: body.dueDate!
       })
       .eq("id", project.id)
-      .select("id,user_id,client_name,client_email,name,due_date,status,token,created_at")
+      .select("id,user_id,client_name,client_email,name,due_date,status,token,access_passcode_hash,expires_at,created_at")
       .single();
 
     if (updateError || !updatedProject) {
@@ -144,17 +225,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
 
     return NextResponse.json({
-      project: {
-        id: updatedProject.id,
-        userId: updatedProject.user_id,
-        clientName: updatedProject.client_name,
-        clientEmail: updatedProject.client_email,
-        name: updatedProject.name,
-        dueDate: updatedProject.due_date,
-        status: updatedProject.status,
-        token: updatedProject.token,
-        createdAt: updatedProject.created_at
-      },
+      project: projectFromRow(updatedProject),
       log: log
         ? {
             id: log.id,
@@ -170,6 +241,38 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       { status: 500 }
     );
   }
+}
+
+function isMissingAccessColumnError(message: string) {
+  return message.includes("access_passcode_hash") || message.includes("expires_at");
+}
+
+function projectFromRow(project: {
+  id: string;
+  user_id: string;
+  client_name: string;
+  client_email: string;
+  name: string;
+  due_date: string;
+  status: string;
+  token: string;
+  access_passcode_hash?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+}) {
+  return {
+    id: project.id,
+    userId: project.user_id,
+    clientName: project.client_name,
+    clientEmail: project.client_email,
+    name: project.name,
+    dueDate: project.due_date,
+    status: project.status,
+    token: project.token,
+    hasPasscode: Boolean(project.access_passcode_hash),
+    expiresAt: project.expires_at ?? null,
+    createdAt: project.created_at
+  };
 }
 
 function validateProjectDetailsBody(body: PatchProjectBody) {

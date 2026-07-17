@@ -163,10 +163,15 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const user = userFromSupabase(data.session.user);
-      setState((previous) => withLocalUser(previous, user));
-      setSession({ userId: user.id });
-      void syncProfile(user);
+      void loadUserFromSupabaseProfile(data.session.user).then((user) => {
+        if (!mounted) {
+          return;
+        }
+
+        setState((previous) => withLocalUser(previous, user));
+        setSession({ userId: user.id });
+        void syncProfile(user);
+      });
     });
 
     const {
@@ -180,10 +185,15 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const user = userFromSupabase(authSession.user);
-      setState((previous) => withLocalUser(previous, user));
-      setSession({ userId: user.id });
-      void syncProfile(user);
+      void loadUserFromSupabaseProfile(authSession.user).then((user) => {
+        if (!mounted) {
+          return;
+        }
+
+        setState((previous) => withLocalUser(previous, user));
+        setSession({ userId: user.id });
+        void syncProfile(user);
+      });
     });
 
     return () => {
@@ -309,7 +319,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
           throw new Error("Could not log in. Try again.");
         }
 
-        const user = userFromSupabase(data.user);
+        const user = await loadUserFromSupabaseProfile(data.user);
         setState((previous) => withLocalUser(previous, user));
         setSession({ userId: user.id });
         await syncProfile(user);
@@ -331,7 +341,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
           throw new Error("That code did not work. Try a fresh code.");
         }
 
-        const user = userFromSupabase(data.user);
+        const user = await loadUserFromSupabaseProfile(data.user);
         setState((previous) => withLocalUser(previous, user));
         setSession({ userId: user.id });
         await syncProfile(user);
@@ -379,8 +389,8 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
         // Client link audit:
         // - Links resolve by `project.token`, not the readable project id.
         // - New packets use crypto.randomUUID when available, so the token is not realistically guessable.
-        // - This version does not include passcodes, expirations, or per-client identity checks.
-        // - For production, add optional expiry/passcode controls and server-side rate limiting/audit logs.
+        // - Optional passcodes and expiration are enforced by the public packet APIs.
+        // - A production hardening pass should still add rate limiting and richer audit logs.
         const project = state.projects.find((candidate) => candidate.token === token);
         return project ? withCalculatedStatus(project, state.checklistItems, state.submissions) : undefined;
       },
@@ -730,23 +740,23 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
       },
       refreshWorkspace,
       async addTemplate(input) {
-        const userId = requireSession(session);
-        const template: Template = {
-          id: generateUuid(),
-          userId,
-          name: input.name.trim(),
-          description: input.description.trim(),
-          items: input.items.map((itemInput, index) => ({
-            id: generateUuid(),
-            title: itemInput.title.trim(),
-            description: itemInput.description.trim(),
-            type: itemInput.type,
-            required: itemInput.required,
-            sortOrder: index + 1
-          }))
-        };
+        requireSession(session);
+        const response = await fetch("/api/templates", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(await getBearerAuthHeaders())
+          },
+          body: JSON.stringify(input)
+        });
 
-        await saveTemplateToSupabase(template);
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(body?.error ?? "Could not save template.");
+        }
+
+        const body = (await response.json()) as { template: Template };
+        const template = body.template;
 
         setState((previous) => ({
           ...previous,
@@ -758,7 +768,7 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
       async updateTemplate(templateId, input) {
         const userId = requireSession(session);
         const existingTemplate = state.templates.find((template) => template.id === templateId);
-        const template: Template = {
+        let template: Template = {
           id: isUuid(templateId) ? templateId : generateUuid(),
           userId,
           name: input.name.trim(),
@@ -774,9 +784,39 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
         };
 
         if (isUuid(templateId)) {
-          await replaceTemplateInSupabase(template);
+          const response = await fetch(`/api/templates/${templateId}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...(await getBearerAuthHeaders())
+            },
+            body: JSON.stringify(input)
+          });
+
+          if (!response.ok) {
+            const body = await response.json().catch(() => null);
+            throw new Error(body?.error ?? "Could not update template.");
+          }
+
+          const body = (await response.json()) as { template: Template };
+          template = body.template;
         } else {
-          await saveTemplateToSupabase(template);
+          const response = await fetch("/api/templates", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(await getBearerAuthHeaders())
+            },
+            body: JSON.stringify(input)
+          });
+
+          if (!response.ok) {
+            const body = await response.json().catch(() => null);
+            throw new Error(body?.error ?? "Could not save template.");
+          }
+
+          const body = (await response.json()) as { template: Template };
+          template = body.template;
         }
 
         setState((previous) => ({
@@ -790,10 +830,14 @@ export function ProjectPacketProvider({ children }: { children: ReactNode }) {
       },
       async deleteTemplate(templateId) {
         if (isUuid(templateId)) {
-          const { error } = await supabase.from("templates").delete().eq("id", templateId);
+          const response = await fetch(`/api/templates/${templateId}`, {
+            method: "DELETE",
+            headers: await getBearerAuthHeaders()
+          });
 
-          if (error) {
-            throw new Error(`Could not delete template: ${error.message}`);
+          if (!response.ok) {
+            const body = await response.json().catch(() => null);
+            throw new Error(body?.error ?? "Could not delete template.");
           }
         }
 
@@ -963,8 +1007,33 @@ function userFromSupabase(
     name,
     email,
     businessName,
-    brandColor: "#2563eb",
+    brandColor: String(metadata.brand_color ?? metadata.brandColor ?? "#2563eb"),
     createdAt: authUser.created_at ?? new Date().toISOString()
+  };
+}
+
+async function loadUserFromSupabaseProfile(
+  authUser: SupabaseUser,
+  fallback?: { name: string; email: string; businessName: string }
+) {
+  const user = userFromSupabase(authUser, fallback);
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("name,email,business_name,brand_color,created_at")
+    .eq("id", authUser.id)
+    .maybeSingle();
+
+  if (error || !data) {
+    return user;
+  }
+
+  return {
+    ...user,
+    name: data.name || user.name,
+    email: data.email || user.email,
+    businessName: data.business_name || user.businessName,
+    brandColor: data.brand_color || user.brandColor,
+    createdAt: data.created_at || user.createdAt
   };
 }
 
@@ -988,7 +1057,7 @@ function withLocalUser(
                 ...candidate,
                 ...user,
                 businessName: user.businessName || candidate.businessName,
-                brandColor: candidate.brandColor ?? user.brandColor
+                brandColor: user.brandColor || candidate.brandColor
               }
             : candidate
         )
@@ -1045,6 +1114,8 @@ interface ProjectRow {
   due_date: string;
   status: string;
   token: string;
+  access_passcode_hash?: string | null;
+  expires_at?: string | null;
   created_at: string;
 }
 
@@ -1111,7 +1182,7 @@ async function loadWorkspaceFromSupabase(userId: string): Promise<RemoteWorkspac
   const [projectsResult, templatesResult, subscriptionsResult] = await Promise.all([
     supabase
       .from("projects")
-      .select("id,user_id,client_name,client_email,name,due_date,status,token,created_at")
+      .select("id,user_id,client_name,client_email,name,due_date,status,token,access_passcode_hash,expires_at,created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false }),
     supabase
@@ -1277,6 +1348,8 @@ function projectFromRow(row: ProjectRow): Project {
     dueDate: row.due_date,
     status: row.status as ProjectStatus,
     token: row.token,
+    hasPasscode: Boolean(row.access_passcode_hash),
+    expiresAt: row.expires_at ?? null,
     createdAt: row.created_at
   };
 }
