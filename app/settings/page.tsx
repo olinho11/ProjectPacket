@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { CreditCard, Save } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { BrandMark } from "@/components/BrandMark";
 import { Button, ButtonLink, Card, Field, inputClass, PageHeader } from "@/components/ui";
 import { brandForeground, normalizeBrandColor } from "@/src/colors";
 import { SUPPORT_EMAIL } from "@/src/legal";
@@ -104,12 +105,10 @@ export default function SettingsPage() {
               </div>
               <div className="mt-2 rounded-md border border-line bg-[#fbfaf7] p-3">
                 <div className="flex items-center gap-3">
-                  <span
-                    className="flex h-9 w-9 items-center justify-center rounded-md text-xs font-bold"
-                    style={{ backgroundColor: brandColor, color: brandForeground(brandColor) }}
-                  >
-                    PP
-                  </span>
+                  <BrandMark
+                    backgroundColor={brandColor}
+                    foregroundColor={brandForeground(brandColor)}
+                  />
                   <div>
                     <p className="text-sm font-semibold">{businessName || "Your workspace"}</p>
                     <p className="text-xs text-ink/50">This accent appears in your app and client portal.</p>

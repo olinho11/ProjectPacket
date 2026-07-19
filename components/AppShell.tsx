@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CreditCard, FolderKanban, LayoutDashboard, LogOut, Plus, Settings, SquareStack } from "lucide-react";
+import { BrandMark } from "@/components/BrandMark";
 import { Button, ButtonLink } from "@/components/ui";
 import { brandForeground, normalizeBrandColor } from "@/src/colors";
 import { useProjectPacket } from "@/src/store";
@@ -32,9 +33,7 @@ export function AppShell({ children, brandColor }: { children: ReactNode; brandC
     >
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-line bg-[#fbfaf6] px-3 py-4 md:block">
         <Link href="/dashboard" className="flex items-center gap-3 rounded-md px-2 py-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-ink text-xs font-bold text-white">
-            PP
-          </span>
+          <BrandMark />
           <span className="min-w-0">
             <span className="block text-[11px] font-semibold text-ink/50">ProjectPacket</span>
             <span className="block truncate text-sm font-semibold text-ink">{currentUser?.businessName ?? "Workspace"}</span>
@@ -91,9 +90,7 @@ export function AppShell({ children, brandColor }: { children: ReactNode; brandC
       <header className="sticky top-0 z-10 border-b border-line bg-[#fbfaf6]/95 px-4 py-3 backdrop-blur md:hidden">
         <div className="flex items-center justify-between gap-3">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-2 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-ink text-[11px] font-bold text-white">
-              PP
-            </span>
+            <BrandMark className="h-8 w-8" />
             <span className="truncate">ProjectPacket</span>
           </Link>
           <ButtonLink href="/projects/new" className="min-h-9 px-3">

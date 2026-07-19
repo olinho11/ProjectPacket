@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BrandMark } from "@/components/BrandMark";
 import { Button, Field, inputClass } from "@/components/ui";
 import { useProjectPacket } from "@/src/store";
 
@@ -69,9 +70,7 @@ export default function SignupPage() {
       <div className="mx-auto grid min-h-screen max-w-6xl px-4 py-6 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12 lg:py-10">
         <section className="hidden rounded-md bg-ink p-8 text-white lg:flex lg:flex-col lg:justify-between">
           <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-xs font-bold text-ink">
-              PP
-            </span>
+            <BrandMark tone="inverse" />
             <span className="font-semibold">ProjectPacket</span>
           </Link>
           <div>
@@ -90,9 +89,7 @@ export default function SignupPage() {
         <section className="flex items-center justify-center py-10">
           <div className="w-full max-w-md">
             <Link href="/" className="mb-10 flex items-center gap-3 lg:hidden">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-ink text-xs font-bold text-white">
-                PP
-              </span>
+              <BrandMark />
               <span className="font-semibold">ProjectPacket</span>
             </Link>
             <p className="text-sm font-medium text-ink/50">Create workspace</p>

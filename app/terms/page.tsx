@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { BrandMark } from "@/components/BrandMark";
 import { ButtonLink, Card } from "@/components/ui";
 import { SENSITIVE_UPLOAD_WARNING } from "@/src/file-safety";
 import { SUPPORT_EMAIL } from "@/src/legal";
@@ -10,9 +11,7 @@ export default function TermsPage() {
       <header className="border-b border-line bg-[#fbfaf6]/95">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-ink text-xs font-bold text-white">
-              PP
-            </span>
+            <BrandMark />
             <span className="text-sm font-semibold">ProjectPacket</span>
           </Link>
           <ButtonLink href="/signup">Start free</ButtonLink>
